@@ -4,16 +4,18 @@
 **Package / Bundle ID**: `in.jalride.app`  
 **Expo SDK**: 52.0.0 (React Native 0.76.7, Hermes Engine)  
 **Target Platforms**: Android (APK/AAB) & iOS (IPA)  
-**Build Status**: **100% BUILD READY & VERIFIED**  
+**Build Status**: **JS BUNDLE READY / CLOUD RELEASE BUILD BLOCKED (AUTH REQUIRED)**  
 
 ---
 
 ## 1. Platform Compilation Summary
 
-| Platform | Metro Bundler Modules | Bytecode Artifact | Size | Compilation Exit Code | Status |
-|:---:|:---:|---|:---:|:---:|:---:|
-| **Android** | 1,223 modules | `_expo/static/js/android/index-02982c7bca7a1905dce0593cf476dc8c.hbc` | 3.1 MB | **0** | **PASS** |
-| **iOS** | 1,236 modules | `_expo/static/js/ios/index-f3e400981f84b49c53f5e801ba82b9b6.hbc` | 3.1 MB | **0** | **PASS** |
+| Verification Step | Target Artifact | Modules | Size | Status | Evidence / Notes |
+|---|---|:---:|:---:|:---:|---|
+| **Android JS Bytecode** | `_expo/static/js/android/index-631b54b7d460f53640d8d25ff47f9444.hbc` | 1,233 | 3.1 MB | **PASS** | Exit Code 0 |
+| **iOS JS Bytecode** | `_expo/static/js/ios/index-213e692d8e310723271001d87a9f8629.hbc` | 1,237 | 3.1 MB | **PASS** | Exit Code 0 |
+| **Android Native Release (.aab)** | Google Play Store Distribution Package | — | — | **BLOCKED** | `npx expo whoami` reports `Not logged in`. Requires `npx eas login`. |
+| **iOS Native Release (.ipa)** | Apple App Store Distribution Package | — | — | **BLOCKED** | Requires active Apple Developer Program enrollment and `npx eas login`. |
 
 ---
 
@@ -23,17 +25,17 @@
 ```
 $ npx expo export --platform android --no-minify
 Starting Metro Bundler
-Android Bundled 14619ms index.js (1223 modules)
+Android Bundled 13027ms index.js (1233 modules)
 
-› Assets (16):
+› Assets (17):
 node_modules/@react-navigation/elements/lib/module/assets/back-icon-mask.png (653B)
-node_modules/@react-navigation/elements/lib/module/assets/back-icon.png (4 variations | 566B)
+node_modules/@react-navigation/elements/lib/module/assets/back-icon.png (4 variations | 152B)
 node_modules/@react-navigation/elements/lib/module/assets/clear-icon.png (4 variations | 425B)
 node_modules/@react-navigation/elements/lib/module/assets/close-icon.png (4 variations | 235B)
-node_modules/@react-navigation/elements/lib/module/assets/search-icon.png (3 variations | 582B)
+node_modules/@react-navigation/elements/lib/module/assets/search-icon.png (4 variations | 599B)
 
 › android bundles (1):
-_expo/static/js/android/index-02982c7bca7a1905dce0593cf476dc8c.hbc (3.1MB)
+_expo/static/js/android/index-631b54b7d460f53640d8d25ff47f9444.hbc (3.1MB)
 
 › Files (1):
 metadata.json (1.2KB)
@@ -45,7 +47,7 @@ Exported: dist
 ```
 $ npx expo export --platform ios --no-minify
 Starting Metro Bundler
-iOS Bundled 16750ms index.js (1236 modules)
+iOS Bundled 11188ms index.js (1237 modules)
 
 › Assets (16):
 node_modules/@react-navigation/elements/lib/module/assets/back-icon-mask.png (653B)
@@ -55,7 +57,7 @@ node_modules/@react-navigation/elements/lib/module/assets/close-icon.png (4 vari
 node_modules/@react-navigation/elements/lib/module/assets/search-icon.png (3 variations | 582B)
 
 › ios bundles (1):
-_expo/static/js/ios/index-f3e400981f84b49c53f5e801ba82b9b6.hbc (3.1MB)
+_expo/static/js/ios/index-213e692d8e310723271001d87a9f8629.hbc (3.1MB)
 
 › Files (1):
 metadata.json (1.2KB)
@@ -74,16 +76,19 @@ All required native capabilities are powered by genuine React Native / Expo nati
    - Capabilities: Real-time QR scanning, torch toggle, automatic focus.
 2. **Vector QR Code Rendering**:
    - Libraries: `react-native-qrcode-svg`, `react-native-svg`
-   - Capabilities: Crisp vector rendering for digital tickets and ghat standees without bitmap blurring.
-3. **Payment SDK**:
+   - Capabilities: Crisp vector rendering for digital tickets and ghat standees.
+3. **Official Brand Logo Integration**:
+   - Library: `react-native-svg` (`JalRideLogo.js`)
+   - Assets: Extracted directly from website vector asset `icon.svg` (`#0a2e36` background, `#e8963c` hull, `#146b79` sail).
+4. **Payment SDK**:
    - Library: `react-native-razorpay`
    - Capabilities: Native payment sheet invocation on supported devices + modal fallback.
-4. **Document Picker & Sharing**:
+5. **Document Picker & Sharing**:
    - Libraries: `expo-document-picker`, `expo-sharing`
    - Capabilities: File system access for KYC proof upload and PDF standee sharing.
-5. **Safe Area & Display Insets**:
+6. **Safe Area & Display Insets**:
    - Library: `react-native-safe-area-context`
-   - Capabilities: Dynamic handling of Android status bars, display cutouts, and iOS Dynamic Island.
+   - Capabilities: Dynamic handling of Android status bars, cutouts, and iOS Dynamic Island.
 
 ---
 
@@ -98,9 +103,23 @@ All required native capabilities are powered by genuine React Native / Expo nati
 
 ---
 
-## 5. EAS Cloud Build Configuration (`eas.json`)
+## 5. EAS Cloud Build Blocker & Execution Guide
 
-The application is pre-configured for automated cloud compilation via Expo Application Services (EAS):
-* **Development**: Debug APK / iOS Simulator build with Dev Client.
-* **Preview**: Internal distribution APK / iOS Ad-Hoc build for testing.
-* **Production**: Android App Bundle (`.aab`) for Google Play Store & Release IPA for Apple App Store.
+The application is pre-configured with `eas.json` for automated cloud compilation via Expo Application Services (EAS):
+* **Blocker**: EAS cloud compilation requires an active Expo account session. Running `npx expo whoami` returned:
+  ```
+  Not logged in
+  ```
+* **Resolution Steps for Release Engineer**:
+  1. Log into EAS in your terminal:
+     ```bash
+     npx eas login
+     ```
+  2. Trigger Android Production AAB:
+     ```bash
+     npx eas-cli build --platform android --profile production
+     ```
+  3. Trigger iOS Production IPA:
+     ```bash
+     npx eas-cli build --platform ios --profile production
+     ```

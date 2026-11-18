@@ -1,16 +1,16 @@
-# JalRide Native Mobile App: Remaining Operational Considerations & Launch Checklist
+# JalRide Native Mobile App: Remaining Operational Blockers & Launch Checklist
 
 **Application**: JalRide (जलराइड) - True Native Mobile Application  
-**Code Quality Status**: **0 Code Deficiencies / 0 Unresolved Audit Issues**  
-**Readiness**: 100% Code-Complete for Android & iOS App Stores  
+**Current Code Status**: **0 Code Deficiencies / 28 Automated Tests Passed (100%)**  
+**Final Verdict**: **READY WITH DOCUMENTED LIMITATIONS**  
 
 ---
 
 ## 1. Technical Audit Defect Status
 
-All functional defects, security vulnerabilities, missing APIs, and UI/UX issues identified during the comprehensive read-only functional audit have been **100% resolved** in the `feature/native-production-completion` branch.
+All functional defects, security vulnerabilities, missing APIs, and UI/UX issues identified during the comprehensive functional audit have been **100% resolved** in branch `feature/native-production-completion`.
 
-| Priority Tier | Initial Audit Defects | Remediated in this Execution | Remaining Code Defects |
+| Priority Tier | Initial Audit Defects | Remediated in Code | Remaining Code Defects |
 |:---:|:---:|:---:|:---:|
 | **P0 (Critical / Blockers)** | 12 | 12 | **0** |
 | **P1 (High / Operational)** | 18 | 18 | **0** |
@@ -19,68 +19,50 @@ All functional defects, security vulnerabilities, missing APIs, and UI/UX issues
 
 ---
 
-## 2. External Operational Prerequisites for Store Launch
+## 2. External Operational Blockers (Why "READY WITH DOCUMENTED LIMITATIONS")
 
-While the mobile codebase is production-ready, the following operational and store configurations are required prior to public release:
+Per strict verification instructions, because production `.aab` / `.ipa` cloud generation and physical device field testing could not be completed on this machine without external credentials, the status is explicitly reported as **READY WITH DOCUMENTED LIMITATIONS**.
 
-### 2.1 Backend Production Environment Variables (Render Dashboard)
-* **Razorpay Credentials**:
-  - Ensure `process.env.RAZORPAY_KEY_ID` and `process.env.RAZORPAY_KEY_SECRET` on `https://jalride-backend.onrender.com` are switched from Razorpay Test mode (`rzp_test_...`) to Live mode (`rzp_live_...`) before accepting live devotee payments.
-* **Database Connection Pooling**:
-  - Ensure MongoDB Atlas connection pool sizing on Render is configured to sustain expected Dev Deepawali peak traffic (concurrency spikes at Dashashwamedh Ghat).
+The exact documented blockers and resolution actions are:
 
-### 2.2 Google Play Store Submission Checklist
-* **App Identifier**: `in.jalride.app`
-* **Google Play Console Setup**:
-  1. Create application listing under the official JalRide Google Play Developer Account.
-  2. Provide app store assets:
-     - App Icon: 512x512 PNG.
-     - Feature Graphic: 1024x500 PNG.
-     - Screenshots: Phone (min 2, 1080x1920 or 1080x2400) showcasing Home, Booking, QR Ticket, and Owner Dashboard.
-  3. Declare Data Safety Questionnaire:
-     - Location (approximate & precise for ghat navigation).
-     - Camera (for ticket and standee QR code scanning).
-     - Personal info (Name, Email, Phone number for booking and dispatch).
-  4. Privacy Policy URL: host privacy policy at `https://jalride.in/privacy`.
-  5. EAS Cloud Build Command:
-     ```bash
-     npx eas-cli@latest build --platform android --profile production
-     ```
+### Blocker 1: EAS Cloud Build Authentication
+* **Condition**: `npx expo whoami` returns `Not logged in`.
+* **Impact**: EAS cloud servers cannot accept build tasks without an authenticated user account.
+* **Resolution Action**:
+  ```bash
+  npx eas login
+  npx eas-cli build --platform android --profile production
+  npx eas-cli build --platform ios --profile production
+  ```
 
-### 2.3 Apple App Store Submission Checklist
-* **Bundle Identifier**: `in.jalride.app`
-* **Apple Developer Program Setup**:
-  1. Register App ID `in.jalride.app` in Apple Developer Portal.
-  2. Create App Store listing in App Store Connect.
-  3. Provide screenshots for 6.7" Super Retina XDR (iPhone 16 Pro Max) and 6.1" (iPhone 16).
-  4. App Privacy Nutrition Label: Declare contact info, financial info, and location usage matching `Info.plist` descriptions.
-  5. EAS Cloud Build Command:
-     ```bash
-     npx eas-cli@latest build --platform ios --profile production
-     ```
+### Blocker 2: Apple Developer Program Provisioning
+* **Condition**: Apple Developer Team ID and distribution certificates are managed within the Apple Developer Portal and cannot be generated autonomously without account credentials.
+* **Impact**: Final release `.ipa` requires automated or manual signing with an Apple Distribution Certificate.
+* **Resolution Action**: Release engineer connects Apple ID during `eas build --platform ios`.
 
-### 2.4 Physical Ghat Hardware Smoke Test Plan
-Before full public rollout, perform a 30-minute on-site smoke test with boat captains at Varanasi ghats:
-1. **Device 1 (Boat Captain - Owner App)**:
-   - Log into Boat Owner account.
-   - Display boat QR standee from `OwnerQrPostersScreen.js`.
-2. **Device 2 (Devotee - Customer App)**:
-   - Scan boat standee using `QrScanScreen.js` via hardware camera.
-   - Confirm instant boat discovery screen renders with captain name and capacity.
-   - Complete ₹1 live UPI booking.
-   - Validate vector QR ticket in `TicketScreen.js`.
-3. **Boarding Validation**:
-   - Captain scans Devotee's ticket QR with `QrScanScreen.js`.
-   - Confirm ticket is verified and marked `completed` in backend.
-   - Confirm owner wallet earnings credit accurately reflecting platform split.
+### Blocker 3: Physical Ghat Device & Hardware Testing
+* **Condition**: ADB daemon has no physical Android devices attached, and on-site testing requires physical presence at Varanasi ghats.
+* **Impact**: Field validation of camera focus on worn standee posters and GPS accuracy under high river embankment walls must be verified by field staff in Varanasi.
+* **Resolution Action**: On-site 30-minute smoke test with local boat captains (Naviks) at Dashashwamedh Ghat and Assi Ghat.
 
 ---
 
-## 3. Recommended Future Roadmap (Post-Launch)
+## 3. Store Release Engineering Checklist
 
-1. **Push Notifications (FCM / APNs)**:
-   - Integrate `expo-notifications` with Firebase Cloud Messaging to send push alerts when boat captains start rides or arrive at the pickup ghat.
-2. **Offline-First Boat Manifest**:
-   - Cache captain's daily manifest locally in SQLite/AsyncStorage for spotty connectivity zones along the Ganges river.
-3. **Multi-Language Audio Guidance**:
-   - Add Hindi, Bengali, Tamil, and English audio tours synchronized to GPS coordinates during the boat ride.
+### 3.1 Backend Production Environment Variables (Render Dashboard)
+* Switch `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` on `https://jalride-backend.onrender.com` from test mode (`rzp_test_...`) to live mode (`rzp_live_...`).
+* Confirm `ADMIN_EMAIL=prepwave.pushpendra@gmail.com` is present in Render environment variables.
+
+### 3.2 Google Play Store Submission
+1. Register `in.jalride.app` in Google Play Console.
+2. Complete Data Safety form:
+   * Location: Approximate & Precise (ghat navigation).
+   * Camera: Ticket QR scanning.
+   * Personal Info: Name, Phone, Email (account & booking).
+3. Privacy policy URL: `https://jalride.in/privacy`.
+4. Upload `.aab` generated from EAS.
+
+### 3.3 Apple App Store Submission
+1. Register Bundle ID `in.jalride.app` in App Store Connect.
+2. Complete App Privacy Nutrition Label matching `Info.plist` usage descriptions.
+3. Upload `.ipa` generated from EAS.
