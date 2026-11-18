@@ -181,6 +181,20 @@ class ApiService {
     return data;
   }
 
+  async forgotPassword(email) {
+    return this.request('/auth/forgot-password', {
+      method: 'POST',
+      body: { email: (email || '').toLowerCase().trim() },
+    });
+  }
+
+  async resetPassword(token, password) {
+    return this.request('/auth/reset-password', {
+      method: 'POST',
+      body: { token: (token || '').trim(), password },
+    });
+  }
+
   async logout() {
     try {
       await this.request('/auth/logout', {

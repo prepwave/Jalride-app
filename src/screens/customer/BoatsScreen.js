@@ -10,6 +10,7 @@ import {
   RefreshControl,
   StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
@@ -28,6 +29,7 @@ const BOAT_TYPES = [
 ];
 
 export default function BoatsScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
   const initialType = route?.params?.filterType || 'all';
 
@@ -131,7 +133,7 @@ export default function BoatsScreen({ navigation, route }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Screen Title */}
-      <View style={[styles.headerBar, isDark && styles.headerBarDark]}>
+      <View style={[styles.headerBar, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.headerBarDark]}>
         <Text style={[styles.headerTitle, isDark && styles.textLight]}>
           Find Your Boat
         </Text>
@@ -273,7 +275,6 @@ const styles = StyleSheet.create({
     color: '#eaf6f6',
   },
   headerBar: {
-    paddingTop: 52,
     paddingHorizontal: spacing.l,
     paddingBottom: spacing.m,
     backgroundColor: colors.white,

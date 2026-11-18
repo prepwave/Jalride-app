@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
+import * as Sharing from 'expo-sharing';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
@@ -102,12 +103,15 @@ export default function OwnerQrPostersScreen({ navigation }) {
         <View style={styles.actionStack}>
           <Button
             title="Download Print-Ready PDF Poster 📄"
-            onPress={() => {
-              Alert.alert(
-                'Standee PDF Generated',
-                `Official high-resolution A4 printable standee poster generated for ${activeBoat.boatName} at ${activeBoat.location}. Link copied to share clipboard.`,
-                [{ text: 'OK' }]
-              );
+            onPress={async () => {
+              try {
+                await Share.share({
+                  message: `Download official high-resolution A4 Ghat Standee PDF for ${activeBoat.boatName} at ${activeBoat.location}:\n${standeeUrl}`,
+                  title: `JalRide Printable Standee - ${activeBoat.boatName}`,
+                });
+              } catch (err) {
+                Alert.alert('Standee PDF Link', standeeUrl);
+              }
             }}
             variant="primary"
           />

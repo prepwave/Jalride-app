@@ -8,6 +8,7 @@ import {
   RefreshControl,
   StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
@@ -17,6 +18,7 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingSkeleton from '../../components/common/LoadingSkeleton';
 
 export default function MyRidesScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState('upcoming'); // 'upcoming' | 'completed'
   const [bookings, setBookings] = useState([]);
@@ -119,7 +121,7 @@ export default function MyRidesScreen({ navigation }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Screen Header Bar */}
-      <View style={[styles.topHeader, isDark && styles.topHeaderDark]}>
+      <View style={[styles.topHeader, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.topHeaderDark]}>
         <Text style={[styles.screenTitle, isDark && styles.textLight]}>
           My Rides & Passes
         </Text>
@@ -216,7 +218,6 @@ const styles = StyleSheet.create({
     color: '#eaf6f6',
   },
   topHeader: {
-    paddingTop: 52,
     paddingHorizontal: spacing.l,
     paddingBottom: spacing.m,
     backgroundColor: colors.white,

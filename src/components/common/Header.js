@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, typography } from '../../theme';
 
 export default function Header({
@@ -10,8 +11,11 @@ export default function Header({
   transparent = false,
   style,
 }) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets.top, 12);
+
   return (
-    <View style={[styles.container, transparent && styles.transparent, style]}>
+    <View style={[styles.container, { paddingTop: topPadding }, transparent && styles.transparent, style]}>
       <View style={styles.leftRow}>
         {onBack && (
           <TouchableOpacity

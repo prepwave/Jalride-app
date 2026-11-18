@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   StatusBar,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
@@ -15,91 +17,140 @@ import Header from '../../components/common/Header';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 
-const KYC_DOCS = [
+const STANDARD_KYC_TYPES = [
   {
-    id: 'd1',
-    title: 'Aadhaar Card (Identity Proof)',
-    status: 'approved',
-    uploadedAt: '12 Sep 2026',
+    key: 'aadhaar',
+    title: 'Aadhaar Card (National Identity)',
+    subjectType: 'owner',
+    status: 'pending',
+    uploadedAt: null,
     icon: '🪪',
   },
   {
-    id: 'd2',
+    key: 'pan',
+    title: 'PAN Card (Tax Identification)',
+    subjectType: 'owner',
+    status: 'pending',
+    uploadedAt: null,
+    icon: '💳',
+  },
+  {
+    key: 'bank_proof',
+    title: 'Bank Proof (Cancelled Cheque / Passbook)',
+    subjectType: 'owner',
+    status: 'pending',
+    uploadedAt: null,
+    icon: '🏦',
+  },
+  {
+    key: 'boat_registration',
     title: 'Boat Registration Certificate',
-    status: 'approved',
-    uploadedAt: '12 Sep 2026',
+    subjectType: 'boat',
+    status: 'pending',
+    uploadedAt: null,
     icon: '📜',
   },
   {
-    id: 'd3',
-    title: 'Ganga Navigation Captain License',
-    status: 'approved',
-    uploadedAt: '14 Sep 2026',
+    key: 'insurance',
+    title: 'Vessel Navigation Insurance',
+    subjectType: 'boat',
+    status: 'pending',
+    uploadedAt: null,
     icon: '⚓',
-  },
-  {
-    id: 'd4',
-    title: 'Vessel Fitness & Life Jacket Audit',
-    status: 'under_review',
-    uploadedAt: '10 Nov 2026',
-    icon: '🦺',
   },
 ];
 
 export default function OwnerKycScreen({ navigation }) {
   const { isDark } = useTheme();
-  const [docs, setDocs] = useState(KYC_DOCS);
-  const [overallStatus, setOverallStatus] = useState('approved');
+  const [docs, setDocs] = useState(STANDARD_KYC_TYPES);
+  const [overallStatus, setOverallStatus] = useState('pending');
+  const [uploadingDocKey, setUploadingDocKey] = useState(null);
 
-  const loadKyc = () => {
-    api.getOwnerKyc().then((res) => {
+  const loadKyc = async () => {
+    try {
+      const res = await api.getOwnerKyc();
       if (res) {
         if (res.status) setOverallStatus(res.status);
-        if (res.documents && res.documents.length > 0) {
-          const mapped = res.documents.map((d, idx) => ({
-            id: d._id || `d-${idx}`,
-            title: d.type || d.title || 'Navigation License',
-            status: d.status || 'approved',
-            uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString() : 'Active',
-            icon: '📜',
-          }));
-          setDocs(mapped);
-        }
+        const serverDocs = res.documents || [];
+        
+        // Merge server documents into standard document slots
+        setDocs((prevDocs) =>
+          prevDocs.map((item) => {
+            const match = serverDocs.find(
+              (sd) => sd.documentType === item.key || sd.type === item.key
+            );
+            if (match) {
+              return {
+                ...item,
+                status: match.status || 'approved',
+                uploadedAt: match.createdAt
+                  ? new Date(match.createdAt).toLocaleDateString()
+                  : 'Active',
+              };
+            }
+            return item;
+          })
+        );
       }
-    }).catch(() => {});
+    } catch (_) {}
   };
 
   useEffect(() => {
     loadKyc();
   }, []);
 
-  const handleUploadNew = (docTitle) => {
-    Alert.alert(
-      'Upload Document',
-      `Upload document file for: ${docTitle}. You can select a PDF, Camera photo, or Gallery image.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Choose Document / Take Photo',
-          onPress: async () => {
-            try {
-              const formData = new FormData();
-              formData.append('documentType', docTitle);
-              formData.append('file', {
-                uri: 'file:///document_placeholder.pdf',
-                name: `${docTitle.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
-                type: 'application/pdf',
-              });
-              await api.uploadKycDocument(formData);
-              Alert.alert('Upload Successful', `${docTitle} uploaded and sent to JalRide Admin for verification.`);
-              loadKyc();
-            } catch (err) {
-              Alert.alert('Upload Submitted', `${docTitle} submitted for verification to Inland Waterways Registry.`);
-            }
-          },
-        },
-      ]
-    );
+  const handleUploadDocument = async (docItem) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/jpeg', 'image/png'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+
+      // Validate file size: 10MB limit
+      if (asset.size && asset.size > 10 * 1024 * 1024) {
+        Alert.alert('File Too Large', 'Selected file exceeds the 10MB maximum limit. Please choose a smaller file.');
+        return;
+      }
+
+      // Validate file type
+      const mime = (asset.mimeType || '').toLowerCase();
+      const name = (asset.name || '').toLowerCase();
+      const isValidMime = mime.includes('pdf') || mime.includes('jpeg') || mime.includes('jpg') || mime.includes('png');
+      const isValidExt = name.endsWith('.pdf') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png');
+
+      if (!isValidMime && !isValidExt) {
+        Alert.alert('Invalid Format', 'Only PDF, JPEG, and PNG document formats are supported.');
+        return;
+      }
+
+      setUploadingDocKey(docItem.key);
+
+      const formData = new FormData();
+      formData.append('documentType', docItem.key);
+      formData.append('subjectType', docItem.subjectType);
+      formData.append('file', {
+        uri: asset.uri,
+        name: asset.name || `${docItem.key}.pdf`,
+        type: asset.mimeType || 'application/pdf',
+      });
+
+      const uploadRes = await api.uploadKycDocument(formData);
+      Alert.alert(
+        'Upload Successful ✓',
+        uploadRes.message || `${docItem.title} has been submitted to the JalRide Port Authority for verification.`
+      );
+      await loadKyc();
+    } catch (err) {
+      Alert.alert('Upload Error', err.message || 'Unable to upload KYC document.');
+    } finally {
+      setUploadingDocKey(null);
+    }
   };
 
   return (
@@ -120,46 +171,66 @@ export default function OwnerKycScreen({ navigation }) {
               <Text style={{ fontSize: 28 }}>🛡️</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.statusTitle}>KYC Verified Operator</Text>
+              <Text style={styles.statusTitle}>
+                {overallStatus === 'approved' ? 'KYC Verified Operator' : 'Compliance Under Review'}
+              </Text>
               <Text style={styles.statusSub}>
-                Your fleet is authorized to pick up pilgrims across Varanasi ghats.
+                {overallStatus === 'approved'
+                  ? 'Your fleet is authorized to pick up pilgrims across Varanasi ghats.'
+                  : 'Submit all mandatory identity and vessel certificates to operate.'}
               </Text>
             </View>
-            <Badge label="Compliant" variant="success" />
+            <Badge
+              label={overallStatus === 'approved' ? 'Compliant' : 'Verification Pending'}
+              variant={overallStatus === 'approved' ? 'success' : 'warning'}
+            />
           </View>
         </Card>
 
         <Text style={[styles.sectionTitle, isDark && styles.textLight]}>
-          Required Documents
+          Required Compliance Documents
         </Text>
 
-        {docs.map((doc) => (
-          <Card key={doc.id} style={styles.docCard}>
-            <View style={styles.docRow}>
-              <View style={styles.docIcon}>
-                <Text style={{ fontSize: 24 }}>{doc.icon}</Text>
+        {docs.map((doc) => {
+          const isThisUploading = uploadingDocKey === doc.key;
+          return (
+            <Card key={doc.key} style={styles.docCard}>
+              <View style={styles.docRow}>
+                <View style={styles.docIconBox}>
+                  <Text style={{ fontSize: 24 }}>{doc.icon}</Text>
+                </View>
+
+                <View style={{ flex: 1, paddingRight: spacing.s }}>
+                  <Text style={styles.docTitle}>{doc.title}</Text>
+                  <Text style={styles.docUploadDate}>
+                    {doc.uploadedAt ? `Submitted: ${doc.uploadedAt}` : 'Not yet uploaded'}
+                  </Text>
+                </View>
+
+                <Badge
+                  label={doc.status === 'approved' ? 'Approved' : doc.uploadedAt ? 'Under Review' : 'Missing'}
+                  variant={doc.status === 'approved' ? 'success' : doc.uploadedAt ? 'warning' : 'outline'}
+                />
               </View>
 
-              <View style={styles.docInfo}>
-                <Text style={[styles.docTitle, isDark && styles.textLight]}>{doc.title}</Text>
-                <Text style={styles.docDate}>Last updated: {doc.uploadedAt}</Text>
+              <View style={styles.docActions}>
+                <TouchableOpacity
+                  style={[styles.uploadBtn, isThisUploading && styles.uploadBtnDisabled]}
+                  onPress={() => handleUploadDocument(doc)}
+                  disabled={isThisUploading}
+                >
+                  {isThisUploading ? (
+                    <ActivityIndicator color={colors.teal} size="small" />
+                  ) : (
+                    <Text style={styles.uploadBtnText}>
+                      {doc.uploadedAt ? 'Upload New Revision 📁' : 'Choose & Upload Document 📁'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
               </View>
-
-              <Badge
-                label={doc.status === 'approved' ? 'Verified' : 'Under Review'}
-                variant={doc.status === 'approved' ? 'success' : 'warning'}
-                size="small"
-              />
-            </View>
-
-            <TouchableOpacity
-              style={styles.reuploadBtn}
-              onPress={() => handleUploadNew(doc.title)}
-            >
-              <Text style={styles.reuploadText}>Re-upload / Update Document ↗</Text>
-            </TouchableOpacity>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -182,28 +253,32 @@ const styles = StyleSheet.create({
     padding: spacing.l,
   },
   statusCard: {
-    backgroundColor: colors.successMist,
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
     padding: spacing.l,
-    marginBottom: spacing.xl,
-    borderColor: colors.success,
+    marginBottom: spacing.l,
   },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.m,
   },
   shieldBox: {
-    marginRight: spacing.m,
+    width: 48,
+    height: 48,
+    borderRadius: radii.m,
+    backgroundColor: 'rgba(0, 168, 150, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusTitle: {
-    ...typography.bodyMedium,
-    fontWeight: '700',
-    color: colors.success,
+    ...typography.h3,
+    color: colors.ink,
   },
   statusSub: {
     ...typography.caption,
-    color: colors.ink,
+    color: colors.gray600,
     marginTop: 2,
-    lineHeight: 16,
   },
   sectionTitle: {
     ...typography.h3,
@@ -211,44 +286,50 @@ const styles = StyleSheet.create({
     marginBottom: spacing.m,
   },
   docCard: {
-    padding: spacing.l,
     marginBottom: spacing.m,
+    padding: spacing.l,
   },
   docRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.m,
   },
-  docIcon: {
+  docIconBox: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radii.m,
     backgroundColor: colors.gray100,
-    justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.m,
-  },
-  docInfo: {
-    flex: 1,
+    justifyContent: 'center',
   },
   docTitle: {
     ...typography.bodyMedium,
     fontWeight: '700',
     color: colors.ink,
   },
-  docDate: {
+  docUploadDate: {
     ...typography.caption,
     color: colors.gray500,
     marginTop: 2,
   },
-  reuploadBtn: {
+  docActions: {
     marginTop: spacing.m,
-    paddingTop: spacing.s,
+    paddingTop: spacing.m,
     borderTopWidth: 1,
-    borderTopColor: colors.line,
+    borderTopColor: colors.gray100,
   },
-  reuploadText: {
-    ...typography.caption,
+  uploadBtn: {
+    backgroundColor: 'rgba(0, 168, 150, 0.08)',
+    borderRadius: radii.m,
+    paddingVertical: spacing.s,
+    alignItems: 'center',
+  },
+  uploadBtnDisabled: {
+    opacity: 0.6,
+  },
+  uploadBtnText: {
     color: colors.teal,
     fontWeight: '700',
+    fontSize: 13,
   },
 });

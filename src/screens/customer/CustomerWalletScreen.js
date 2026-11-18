@@ -10,6 +10,7 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +24,7 @@ import RazorpayCheckoutModal from '../../components/payment/RazorpayCheckoutModa
 const QUICK_AMOUNTS = [200, 500, 1000, 2000];
 
 export default function CustomerWalletScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
   const { user } = useAuth();
   const [wallet, setWallet] = useState(null);
@@ -164,7 +166,7 @@ export default function CustomerWalletScreen({ navigation }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Screen Header */}
-      <View style={[styles.headerBar, isDark && styles.headerBarDark]}>
+      <View style={[styles.headerBar, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.headerBarDark]}>
         <Text style={[styles.headerTitle, isDark && styles.textLight]}>JalRide Wallet</Text>
         <Text style={styles.headerSubtitle}>Instant 1-click payments, refunds & loyalty cashback</Text>
       </View>
@@ -420,7 +422,6 @@ const styles = StyleSheet.create({
     color: '#eaf6f6',
   },
   headerBar: {
-    paddingTop: 52,
     paddingHorizontal: spacing.l,
     paddingBottom: spacing.m,
     backgroundColor: colors.white,

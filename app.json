@@ -7,12 +7,19 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jalride.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow JalRide to access your camera to scan ghat standee posters and digital boarding tickets.",
+        "NSLocationWhenInUseUsageDescription": "Allow JalRide to access your location to discover nearby Varanasi boarding ghats."
+      }
     },
     "android": {
       "package": "com.jalride.app",
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

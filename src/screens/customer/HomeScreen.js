@@ -10,6 +10,7 @@ import {
   StatusBar,
   FlatList,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -21,6 +22,7 @@ import StarRating from '../../components/common/StarRating';
 import LoadingSkeleton from '../../components/common/LoadingSkeleton';
 
 export default function HomeScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { user, switchRole } = useAuth();
   const { isDark } = useTheme();
   const [boats, setBoats] = useState([]);
@@ -54,7 +56,7 @@ export default function HomeScreen({ navigation }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Top Header Bar */}
-      <View style={[styles.topBar, isDark && styles.topBarDark]}>
+      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.topBarDark]}>
         <View>
           <Text style={[styles.welcomeSub, isDark && styles.textMutedDark]}>
             Har Har Gange 🙏
@@ -363,7 +365,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
-    paddingTop: 48,
     paddingBottom: spacing.m,
     backgroundColor: colors.white,
     borderBottomWidth: 1,

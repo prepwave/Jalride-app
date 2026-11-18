@@ -9,6 +9,7 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -17,6 +18,7 @@ import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 
 export default function AdminDashboardScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { isDark } = useTheme();
   const [stats, setStats] = useState(null);
@@ -47,7 +49,7 @@ export default function AdminDashboardScreen({ navigation }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Admin Header */}
-      <View style={[styles.headerBar, isDark && styles.headerBarDark]}>
+      <View style={[styles.headerBar, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.headerBarDark]}>
         <View>
           <Text style={styles.headerRole}>👑 SUPER ADMINISTRATOR CONSOLE</Text>
           <Text style={[styles.headerName, isDark && styles.textLight]}>
@@ -216,7 +218,6 @@ const styles = StyleSheet.create({
     color: '#eaf6f6',
   },
   headerBar: {
-    paddingTop: 52,
     paddingHorizontal: spacing.l,
     paddingBottom: spacing.m,
     backgroundColor: colors.white,

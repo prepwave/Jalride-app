@@ -9,6 +9,7 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -18,6 +19,7 @@ import Badge from '../../components/common/Badge';
 import Header from '../../components/common/Header';
 
 export default function OwnerDashboardScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { isDark } = useTheme();
   const [stats, setStats] = useState(null);
@@ -61,7 +63,7 @@ export default function OwnerDashboardScreen({ navigation }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Screen Top Bar */}
-      <View style={[styles.topBar, isDark && styles.topBarDark]}>
+      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.topBarDark]}>
         <View>
           <Text style={styles.topBarRole}>⚓ BOAT OWNER CONSOLE</Text>
           <Text style={[styles.topBarName, isDark && styles.textLight]}>
@@ -253,7 +255,6 @@ const styles = StyleSheet.create({
     color: '#eaf6f6',
   },
   topBar: {
-    paddingTop: 52,
     paddingHorizontal: spacing.l,
     paddingBottom: spacing.m,
     backgroundColor: colors.white,

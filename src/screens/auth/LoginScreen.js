@@ -10,6 +10,7 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -18,6 +19,7 @@ import Input from '../../components/common/Input';
 import Card from '../../components/common/Card';
 
 export default function LoginScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const { isDark } = useTheme();
 
@@ -60,7 +62,10 @@ export default function LoginScreen({ navigation }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingTop: Math.max(insets.top + spacing.m, 48), paddingBottom: Math.max(insets.bottom + spacing.l, 32) },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -118,6 +123,13 @@ export default function LoginScreen({ navigation }) {
               if (errorMessage) setErrorMessage('');
             }}
           />
+
+          <TouchableOpacity
+            style={styles.forgotBtn}
+            onPress={() => navigation.navigate('ForgotPassword')}
+          >
+            <Text style={styles.forgotText}>Forgot Password?</Text>
+          </TouchableOpacity>
 
           <Button
             title="Sign In ➔"
@@ -229,8 +241,18 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: '600',
   },
+  forgotBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.s,
+  },
+  forgotText: {
+    ...typography.caption,
+    color: colors.teal,
+    fontWeight: '600',
+  },
   loginBtn: {
-    marginTop: spacing.m,
+    marginTop: spacing.s,
   },
   footerRow: {
     flexDirection: 'row',
