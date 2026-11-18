@@ -17,6 +17,7 @@ import api from '../../services/api';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Header from '../../components/common/Header';
+import JalRideLogo from '../../components/common/JalRideLogo';
 
 export default function OwnerDashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -64,11 +65,14 @@ export default function OwnerDashboardScreen({ navigation }) {
 
       {/* Screen Top Bar */}
       <View style={[styles.topBar, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.topBarDark]}>
-        <View>
-          <Text style={styles.topBarRole}>⚓ BOAT OWNER CONSOLE</Text>
-          <Text style={[styles.topBarName, isDark && styles.textLight]}>
-            {user?.name || 'Rameshwar Majhi'}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <JalRideLogo size={36} variant="badge" />
+          <View>
+            <Text style={styles.topBarRole}>⚓ BOAT OWNER CONSOLE</Text>
+            <Text style={[styles.topBarName, isDark && styles.textLight]}>
+              {user?.name || 'Rameshwar Majhi'}
+            </Text>
+          </View>
         </View>
 
         <TouchableOpacity

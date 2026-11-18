@@ -16,6 +16,7 @@ import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
+import JalRideLogo from '../../components/common/JalRideLogo';
 
 export default function AdminDashboardScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -50,11 +51,14 @@ export default function AdminDashboardScreen({ navigation }) {
 
       {/* Admin Header */}
       <View style={[styles.headerBar, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.headerBarDark]}>
-        <View>
-          <Text style={styles.headerRole}>👑 SUPER ADMINISTRATOR CONSOLE</Text>
-          <Text style={[styles.headerName, isDark && styles.textLight]}>
-            Pushpendra Singh (Admin)
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <JalRideLogo size={36} variant="badge" />
+          <View>
+            <Text style={styles.headerRole}>👑 SUPER ADMINISTRATOR CONSOLE</Text>
+            <Text style={[styles.headerName, isDark && styles.textLight]}>
+              Pushpendra Singh (Admin)
+            </Text>
+          </View>
         </View>
 
         <TouchableOpacity

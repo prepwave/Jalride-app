@@ -17,6 +17,7 @@ import { useTheme } from '../../context/ThemeContext';
 import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
 import Card from '../../components/common/Card';
+import JalRideLogo from '../../components/common/JalRideLogo';
 
 export default function LoginScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -71,9 +72,7 @@ export default function LoginScreen({ navigation }) {
       >
         {/* Brand Banner Header */}
         <View style={styles.brandSection}>
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoIcon}>🛶</Text>
-          </View>
+          <JalRideLogo size={68} style={{ marginBottom: spacing.m }} />
           <Text style={[styles.brandTitle, isDark && styles.textLight]}>
             JALRIDE (जलराइड)
           </Text>

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, typography } from '../../theme';
+import JalRideLogo from './JalRideLogo';
 
 export default function Header({
   title,
@@ -9,6 +10,7 @@ export default function Header({
   onBack,
   rightAction,
   transparent = false,
+  showLogo = false,
   style,
 }) {
   const insets = useSafeAreaInsets();
@@ -27,6 +29,7 @@ export default function Header({
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
         )}
+        {showLogo && <JalRideLogo size={28} variant="badge" style={{ marginRight: spacing.s }} />}
         <View style={styles.titleWrap}>
           <Text style={styles.title} numberOfLines={1}>
             {title}

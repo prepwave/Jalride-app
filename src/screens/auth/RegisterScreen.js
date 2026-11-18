@@ -17,6 +17,7 @@ import { useTheme } from '../../context/ThemeContext';
 import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
 import Card from '../../components/common/Card';
+import JalRideLogo from '../../components/common/JalRideLogo';
 
 export default function RegisterScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -111,6 +112,9 @@ export default function RegisterScreen({ navigation }) {
           >
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
+          <View style={{ alignItems: 'center', marginBottom: spacing.m }}>
+            <JalRideLogo size={56} />
+          </View>
           <Text style={[styles.title, isDark && styles.textLight]}>
             Create JalRide Account
           </Text>

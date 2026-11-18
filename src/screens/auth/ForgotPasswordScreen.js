@@ -17,6 +17,7 @@ import api from '../../services/api';
 import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
 import Card from '../../components/common/Card';
+import JalRideLogo from '../../components/common/JalRideLogo';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -86,9 +87,7 @@ export default function ForgotPasswordScreen({ navigation }) {
 
         {/* Brand Banner */}
         <View style={styles.brandSection}>
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoIcon}>🔑</Text>
-          </View>
+          <JalRideLogo size={56} style={{ marginBottom: spacing.m }} />
           <Text style={[styles.brandTitle, isDark && styles.textLight]}>
             Reset Your Password
           </Text>

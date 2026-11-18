@@ -20,6 +20,7 @@ import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import StarRating from '../../components/common/StarRating';
 import LoadingSkeleton from '../../components/common/LoadingSkeleton';
+import JalRideLogo from '../../components/common/JalRideLogo';
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -57,13 +58,16 @@ export default function HomeScreen({ navigation }) {
 
       {/* Top Header Bar */}
       <View style={[styles.topBar, { paddingTop: Math.max(insets.top, spacing.m) }, isDark && styles.topBarDark]}>
-        <View>
-          <Text style={[styles.welcomeSub, isDark && styles.textMutedDark]}>
-            Har Har Gange 🙏
-          </Text>
-          <Text style={[styles.userName, isDark && styles.textLight]}>
-            {user?.name ? user.name : 'Welcome to JalRide'}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <JalRideLogo size={38} variant="badge" />
+          <View>
+            <Text style={[styles.welcomeSub, isDark && styles.textMutedDark]}>
+              Har Har Gange 🙏
+            </Text>
+            <Text style={[styles.userName, isDark && styles.textLight]}>
+              {user?.name ? user.name : 'JalRide Varanasi'}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.topActions}>
