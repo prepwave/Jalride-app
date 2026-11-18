@@ -403,9 +403,37 @@ class ApiService {
   }
 
   async verifyTicketQr(qrData) {
-    return this.request('/bookings/verify-ticket', {
+    let payload = null;
+    try {
+      if (typeof qrData === 'object' && qrData !== null) {
+        payload = qrData;
+      } else if (typeof qrData === 'string' && qrData.trim().startsWith('{')) {
+        payload = JSON.parse(qrData);
+      }
+    } catch (e) {
+      payload = null;
+    }
+
+    if (payload && payload.bookingId && payload.ticketId && payload.v) {
+      return this.request('/bookings/verify-ticket', {
+        method: 'POST',
+        body: {
+          bookingId: payload.bookingId,
+          ticketId: payload.ticketId,
+          v: payload.v,
+        },
+      });
+    }
+
+    let ticketId = typeof qrData === 'string' ? qrData : '';
+    if (ticketId.includes('JALRIDE:TICKET:')) {
+      const parts = ticketId.split(':');
+      ticketId = parts[2] || parts[1] || ticketId;
+    }
+
+    return this.request('/bookings/verify-ticket-id', {
       method: 'POST',
-      body: { qrData },
+      body: { ticketId: ticketId.trim() },
     });
   }
 
