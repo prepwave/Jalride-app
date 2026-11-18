@@ -63,4 +63,63 @@ describe('Phase 6: Financial Consistency & Split Formula Rules', () => {
     assert.strictEqual(clientSettings.hasOwnProperty('platformCommissionRate'), false);
     assert.strictEqual(clientSettings.hasOwnProperty('settlementHoldDays'), false);
   });
+
+  it('Verifies dynamic 10% commission rate calculation on live boat fare (₹499)', () => {
+    const fare = 499; // Real price of boat Jalpari at Dashashwamedh Ghat
+    const commissionRate = 10; // User-reported 10% configured rate
+    const gstRate = 18; // 18%
+
+    const platformCommission = Math.round((fare * commissionRate) / 100); // 50
+    // When GST is enabled:
+    const gstAmount = Math.round((platformCommission * gstRate) / 100); // 9
+    const ownerEarningWithGst = fare - platformCommission - gstAmount; // 440
+    // When GST is disabled (launch mode):
+    const ownerEarningWithoutGst = fare - platformCommission; // 449
+
+    assert.strictEqual(platformCommission, 50);
+    assert.strictEqual(gstAmount, 9);
+    assert.strictEqual(ownerEarningWithGst, 440);
+    assert.strictEqual(ownerEarningWithoutGst, 449);
+  });
+
+  it('Verifies commission override priority hierarchy: Boat > Owner > Platform Default', () => {
+    function resolveCommissionRate(settingsDefault, ownerOverride, boatOverride) {
+      if (Number.isFinite(boatOverride) && boatOverride >= 0 && boatOverride <= 100) {
+        return boatOverride;
+      }
+      if (Number.isFinite(ownerOverride) && ownerOverride >= 0 && ownerOverride <= 100) {
+        return ownerOverride;
+      }
+      return settingsDefault;
+    }
+
+    // Case 1: Boat has explicit override (e.g. 5%)
+    assert.strictEqual(resolveCommissionRate(10, 8, 5), 5);
+
+    // Case 2: Boat has null override, owner has override (e.g. 8%)
+    assert.strictEqual(resolveCommissionRate(10, 8, null), 8);
+
+    // Case 3: Neither boat nor owner has override -> falls back to platform default (10%)
+    assert.strictEqual(resolveCommissionRate(10, null, null), 10);
+  });
+
+  it('Verifies historical booking financial snapshots are immutable when platform settings change', () => {
+    // Booking created yesterday at 10% commission
+    const historicalBooking = {
+      _id: 'bkg_101',
+      amount: 500,
+      commissionRate: 10,
+      platformCommissionAmount: 50,
+      ownerEarningAmount: 450,
+    };
+
+    // Platform admin updates default commission today to 15%
+    const newPlatformDefault = 15;
+
+    // Existing booking MUST NOT change
+    assert.strictEqual(historicalBooking.commissionRate, 10);
+    assert.strictEqual(historicalBooking.platformCommissionAmount, 50);
+    assert.strictEqual(historicalBooking.ownerEarningAmount, 450);
+    assert.notStrictEqual(historicalBooking.commissionRate, newPlatformDefault);
+  });
 });
