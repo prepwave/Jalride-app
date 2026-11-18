@@ -89,12 +89,26 @@ This report documents the end-to-end production remediation and feature completi
   - Fixed payload schema to match backend editable fields: `defaultCommissionRate`, `commissionGstRate`, `payoutHoldDays`, `minWithdrawAmount`, and `cashbackPercent`.
   - Connected promotional coupon creation to `POST /api/admin/coupons`.
 
-### Phase 7: Financial Consistency (Priority: P0)
-* **Removed Client ₹20 Convenience Fee**: Discovered during audit that `BookingWizardScreen.js` previously added an arbitrary ₹20 fee not recognized by the backend. Removed this calculation to maintain 100% parity with backend pricing rules.
-* **Split Formula Enforcement**: Verified that backend calculations remain strictly authoritative:
-  $$\text{Commission} = \text{Fare} \times \frac{\text{Rate}}{100}$$
-  $$\text{GST} = \text{Commission} \times 0.18$$
-  $$\text{Owner Payout} = \text{Fare} - (\text{Commission} + \text{GST})$$
+### Phase 7: Financial Consistency & GST Split Reconciliation (Priority: P0)
+* **Removed Client ₹20 Convenience Fee**: Discovered during audit that `BookingWizardScreen.js` previously added an arbitrary ₹20 fee not recognized by the backend. Removed this calculation to maintain 100% parity with backend pricing rules (`convenienceFee: 0`).
+* **Authoritative Split Formula Reconciliation**:
+  Inspected backend implementation in `e:\jalride-oauth-final\backend\utils\commission.js` and `models/PlatformSettings.js`:
+  $$\text{platformCommissionAmount} = \text{Math.round}\left(\frac{\text{fareAmount} \times \text{rate}}{100}\right)$$
+  $$\text{platformCommissionGst} = \text{settings.commissionGstEnabled} \ ? \ \text{Math.round}\left(\frac{\text{platformCommissionAmount} \times \text{commissionGstRate}}{100}\right) : 0$$
+  $$\text{ownerEarningAmount} = \text{fareAmount} - \text{platformCommissionAmount} - \text{platformCommissionGst}$$
+  * **Launch Default Reconciliation (`defaultCommissionRate: 2%`, `commissionGstEnabled: false`)**:
+    * Fare = ₹500
+    * Commission = ₹10 ($2\%$)
+    * GST on Commission = ₹0 (`commissionGstEnabled: false` intentionally by platform design at launch)
+    * Owner Payout = $500 - 10 - 0 =$ **₹490**
+  * **When GST is Enabled by Admin (`commissionGstEnabled: true`, `commissionGstRate: 18%`)**:
+    * GST = $\text{Math.round}(10 \times 18\%) =$ **₹2**
+    * Owner Payout = $500 - 10 - 2 =$ **₹488**
+  * **Deduction Rule**: GST is **NOT** included in the commission; it is deducted separately from the owner's payout when enabled. The customer pays exclusively the base fare.
+* **Ledger & Settlement Safety**:
+  - `wallet.pendingAmount` holds earnings for `payoutHoldDays` (default 2 days) before reconciling to `availableBalance`.
+  - Cash-on-ride bookings track commission as `due` and automatically deduct it from owner wallet via `autoDeductDueCommissionsForOwner()`.
+  - Cancellations trigger atomic `processAutoWalletRefund()`, crediting 100% of the fare to the customer's wallet and executing `clawbackEarning()` on the owner's ledger.
 
 ### Phase 8: Mobile UI/UX & Safe Area Insets (Priority: P1)
 * **Dynamic Safe Areas**:

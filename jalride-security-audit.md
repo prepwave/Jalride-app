@@ -33,18 +33,38 @@ All identified vulnerabilities have been remediated. The native application now 
 
 ## 3. Deep-Dive Security Verification
 
-### 3.1 Strict Platform Administrator Boundary
+### 3.1 Strict Platform Administrator Boundary & Backend Enforcement
 * **Rule**: Platform Administrator access must be restricted strictly to `prepwave.pushpendra@gmail.com`.
-* **Client Implementation**:
+* **Backend Source Evidence**:
+  1. `e:\jalride-oauth-final\backend\.env`:
+     ```
+     ADMIN_EMAIL=prepwave.pushpendra@gmail.com
+     ```
+  2. `e:\jalride-oauth-final\backend\server.js` (`ensureAdminUsers()` lines 170–225):
+     At server startup, the backend automatically executes:
+     ```javascript
+     const demoted = await User.updateMany(
+       { email: { $nin: adminEmails }, role: "admin" },
+       { $set: { role: "customer" } }
+     );
+     ```
+     Any imposter or unauthorized account attempting to possess `role: "admin"` is actively demoted by the backend to `role: "customer"`.
+  3. `e:\jalride-oauth-final\backend\controllers\authController.js` (lines 26–34 & 78–80):
+     `checkIsAdminEmail(email)` permits only `prepwave.pushpendra@gmail.com` to receive `role: "admin"` during user registration.
+  4. `e:\jalride-oauth-final\backend\routes\adminRoutes.js` (line 5):
+     ```javascript
+     router.use(protect, authorize("admin"));
+     ```
+     Every single `/api/admin/*` endpoint is protected at the router level by Bearer JWT verification (`protect`) and strict role gating (`authorize("admin")`), returning HTTP 401/403 for unauthorized requests.
+* **Client Implementation** (`src/components/navigation/RootNavigator.js` & `ProfileScreen.js`):
   ```javascript
-  // src/components/navigation/RootNavigator.js
   const isAdmin = user && user.role === 'admin' && user.email === 'prepwave.pushpendra@gmail.com';
   ```
 * **Audit Result**:
   - `prepwave.pushpendra@gmail.com` with `role: 'admin'` $\rightarrow$ **ACCESS GRANTED**.
-  - `imposter@jalride.in` with `role: 'admin'` $\rightarrow$ **ACCESS DENIED**.
-  - `prepwave.pushpendra@gmail.com` with `role: 'customer'` $\rightarrow$ **ACCESS DENIED**.
-  - Anonymous user $\rightarrow$ **ACCESS DENIED**.
+  - `imposter@jalride.in` with `role: 'admin'` $\rightarrow$ **BLOCKED BY BACKEND & CLIENT**.
+  - `prepwave.pushpendra@gmail.com` with `role: 'customer'` $\rightarrow$ **BLOCKED BY BACKEND & CLIENT**.
+  - Anonymous user $\rightarrow$ **BLOCKED BY BACKEND & CLIENT**.
 
 ### 3.2 Payment Signature Integrity (HMAC-SHA256)
 * Client-side checkout collects `razorpay_order_id`, `razorpay_payment_id`, and `razorpay_signature`.
