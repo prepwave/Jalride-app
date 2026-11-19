@@ -54,8 +54,18 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const loginWithSession = async (sessionToken, sessionRefreshToken, sessionUser) => {
+    if (sessionUser && sessionUser.role === 'admin' && sessionUser.email?.toLowerCase().trim() !== 'prepwave.pushpendra@gmail.com') {
+      sessionUser.role = 'customer';
+    }
+    await api.setSession(sessionToken, sessionRefreshToken, sessionUser);
+    setUser(sessionUser);
+    setToken(sessionToken);
+    setActiveRole(sessionUser?.role || 'customer');
+    return { success: true, user: sessionUser };
+  };
+
   const login = async (email, password) => {
-    setLoading(true);
     try {
       const res = await api.login(email, password);
       if (res && res.token && res.user) {
@@ -77,13 +87,10 @@ export function AuthProvider({ children }) {
         requiresEmailVerification: isUnverified,
         message: err.message || 'Login failed',
       };
-    } finally {
-      setLoading(false);
     }
   };
 
   const googleLogin = async (idToken, role = 'customer') => {
-    setLoading(true);
     try {
       const res = await api.googleLogin(idToken, role);
       if (res && res.token && res.user) {
@@ -98,13 +105,10 @@ export function AuthProvider({ children }) {
       return { success: false, message: res.message || 'Google sign-in failed' };
     } catch (err) {
       return { success: false, message: err.message || 'Google sign-in failed' };
-    } finally {
-      setLoading(false);
     }
   };
 
   const verifyEmailOtp = async (otpToken) => {
-    setLoading(true);
     try {
       const res = await api.verifyEmail(otpToken);
       if (res && res.token && res.user) {
@@ -119,8 +123,6 @@ export function AuthProvider({ children }) {
       return { success: false, message: res.message || 'Verification failed' };
     } catch (err) {
       return { success: false, message: err.message || 'Verification failed' };
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -134,7 +136,6 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (payload) => {
-    setLoading(true);
     try {
       const res = await api.register(payload);
       if (res && res.success) {
@@ -153,8 +154,6 @@ export function AuthProvider({ children }) {
       return { success: false, message: res.message || 'Registration failed' };
     } catch (err) {
       return { success: false, message: err.message || 'Registration failed' };
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -227,6 +226,7 @@ export function AuthProvider({ children }) {
         activeRole,
         switchRole,
         login,
+        loginWithSession,
         googleLogin,
         verifyEmailOtp,
         resendVerificationOtp,

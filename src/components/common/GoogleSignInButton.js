@@ -50,7 +50,7 @@ export default function GoogleSignInButton({
   onError,
   style,
 }) {
-  const { googleLogin } = useAuth();
+  const { googleLogin, loginWithSession } = useAuth();
   const [loading, setLoading] = useState(false);
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
@@ -58,36 +58,47 @@ export default function GoogleSignInButton({
   const handleGooglePress = async () => {
     setLoading(true);
     try {
-      // 1. Attempt official OAuth redirect via AuthSession
       const redirectUri = AuthSession.makeRedirectUri({ scheme: 'jalride-app' });
+      // Official authorized JalRide Google Auth gateway
       const authUrl =
-        `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
-        `&response_type=id_token` +
-        `&scope=${encodeURIComponent('openid email profile')}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&nonce=${Date.now()}`;
+        `https://jalride-v1.vercel.app/google-auth?role=${encodeURIComponent(role)}` +
+        `&returnTo=${encodeURIComponent(redirectUri)}`;
 
       const authResult = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
       if (authResult.type === 'success' && authResult.url) {
-        // Parse id_token from response hash
-        const hashMatch = authResult.url.match(/id_token=([^&]+)/);
-        if (hashMatch && hashMatch[1]) {
-          const idToken = decodeURIComponent(hashMatch[1]);
-          const result = await googleLogin(idToken, role);
-          if (result.success) {
-            if (onSuccess) onSuccess(result.user);
-            return;
-          } else {
-            throw new Error(result.message || 'Google authentication failed');
+        const url = authResult.url;
+        const qIdx = url.indexOf('?');
+        if (qIdx !== -1) {
+          const qs = url.slice(qIdx + 1);
+          const params = new URLSearchParams(qs);
+          const token = params.get('token');
+          const refresh = params.get('refresh');
+          const userStr = params.get('user');
+
+          if (token && userStr) {
+            let user = null;
+            try {
+              user = JSON.parse(decodeURIComponent(userStr));
+            } catch (_) {
+              try {
+                user = JSON.parse(userStr);
+              } catch (_) {}
+            }
+
+            if (user) {
+              const res = await loginWithSession(token, refresh, user);
+              if (res.success) {
+                if (onSuccess) onSuccess(user);
+                return;
+              }
+            }
           }
         }
       }
 
       // If user dismissed or cancelled the web dialog
       if (authResult.type === 'cancel' || authResult.type === 'dismiss') {
-        // User closed the browser, no error needed
         return;
       }
 
@@ -95,7 +106,7 @@ export default function GoogleSignInButton({
       setManualModalVisible(true);
     } catch (err) {
       console.warn('Google Sign-In error:', err.message);
-      // Offer direct verification option if browser session is blocked
+      if (onError) onError(err.message);
       setManualModalVisible(true);
     } finally {
       setLoading(false);

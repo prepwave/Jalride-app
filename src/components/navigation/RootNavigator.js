@@ -3,6 +3,7 @@ import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme';
+import JalRideLogo from '../common/JalRideLogo';
 
 import AuthNavigator from './AuthNavigator';
 import CustomerNavigator from './CustomerNavigator';
@@ -17,7 +18,8 @@ export default function RootNavigator() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.teal} />
+        <JalRideLogo size={72} style={{ marginBottom: 16 }} />
+        <ActivityIndicator size="small" color="#e8963c" style={{ marginTop: 12 }} />
       </View>
     );
   }
@@ -59,6 +61,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.paper,
+    backgroundColor: '#0a2e36',
   },
 });

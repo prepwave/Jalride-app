@@ -81,7 +81,7 @@ class ApiService {
       const response = await fetch(url, {
         method: options.method || 'GET',
         headers,
-        body: options.body ? JSON.stringify(options.body) : undefined,
+        body: options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : undefined,
         signal: controller.signal,
       });
 
@@ -90,8 +90,8 @@ class ApiService {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        // Handle 401 token refresh if available
-        if (response.status === 401 && this.refreshToken && !options._isRetry) {
+        // Handle 401 token refresh if available (never for login or registration attempts)
+        if (response.status === 401 && this.refreshToken && !options._isRetry && !path.startsWith('/auth/login') && !path.startsWith('/auth/register')) {
           const refreshed = await this.refreshTokens();
           if (refreshed) {
             return this.request(path, { ...options, _isRetry: true });
