@@ -81,7 +81,12 @@ export default function BoatsScreen({ navigation, route }) {
       onPress={() => navigation.navigate('BoatDetail', { boatId: item._id, boat: item })}
     >
       <Image
-        source={{ uri: item.images?.[0] || 'https://images.unsplash.com/photo-1598977123418-454555aa04f8?w=800&q=80' }}
+        source={{
+          uri:
+            typeof item.images?.[0] === 'string'
+              ? item.images[0]
+              : item.images?.[0]?.url || 'https://images.unsplash.com/photo-1598977123418-454555aa04f8?w=800&q=80',
+        }}
         style={styles.boatImg}
       />
       <View style={styles.badgeRow}>

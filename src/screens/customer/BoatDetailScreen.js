@@ -59,9 +59,14 @@ export default function BoatDetailScreen({ navigation, route }) {
     navigation.navigate('BookingWizard', { boat });
   };
 
-  const images = boat.images && boat.images.length > 0
-    ? boat.images
-    : ['https://images.unsplash.com/photo-1598977123418-454555aa04f8?w=800&q=80'];
+  const rawImages = Array.isArray(boat?.images) ? boat.images : [];
+  const normalizedImages = rawImages
+    .map((img) => (typeof img === 'string' ? img : img?.url || null))
+    .filter(Boolean);
+  const images =
+    normalizedImages.length > 0
+      ? normalizedImages
+      : ['https://images.unsplash.com/photo-1598977123418-454555aa04f8?w=800&q=80'];
 
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>

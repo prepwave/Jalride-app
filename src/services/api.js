@@ -15,6 +15,30 @@ const TOKEN_KEY = 'jalride_native_token';
 const REFRESH_KEY = 'jalride_native_refresh_token';
 const USER_KEY = 'jalride_native_user';
 
+function normalizeBoat(b) {
+  if (!b) return b;
+  let imgs = [];
+  if (Array.isArray(b.images)) {
+    imgs = b.images
+      .map((img) => {
+        if (typeof img === 'string') return img;
+        if (img && typeof img.url === 'string') return img.url;
+        if (img && typeof img.uri === 'string') return img.uri;
+        return null;
+      })
+      .filter(Boolean);
+  }
+  if (imgs.length === 0) {
+    imgs = ['https://images.unsplash.com/photo-1598977123418-454555aa04f8?w=800&q=80'];
+  }
+  return {
+    ...b,
+    boatName: b.boatName || b.name || 'JalRide Boat',
+    images: imgs,
+    amenities: Array.isArray(b.amenities) ? b.amenities : [],
+  };
+}
+
 class ApiService {
   constructor() {
     this.token = null;
@@ -274,9 +298,10 @@ class ApiService {
     const q = params.toString();
     try {
       const res = await this.request(`/boats${q ? '?' + q : ''}`);
-      return res.boats || res.data || MOCK_BOATS;
+      const rawBoats = res.boats || res.data || MOCK_BOATS;
+      return Array.isArray(rawBoats) ? rawBoats.map(normalizeBoat) : [];
     } catch (e) {
-      let filtered = [...MOCK_BOATS];
+      let filtered = [...MOCK_BOATS].map(normalizeBoat);
       if (filters.location && filters.location !== 'All Ghats') {
         filtered = filtered.filter(b => b.location === filters.location);
       }
@@ -294,9 +319,9 @@ class ApiService {
   async getBoatById(id) {
     try {
       const res = await this.request(`/boats/${id}`);
-      return res.boat || res.data;
+      return normalizeBoat(res.boat || res.data);
     } catch (e) {
-      return MOCK_BOATS.find(b => b._id === id) || MOCK_BOATS[0];
+      return normalizeBoat(MOCK_BOATS.find(b => b._id === id) || MOCK_BOATS[0]);
     }
   }
 
@@ -560,9 +585,10 @@ class ApiService {
   async getOwnerBoats() {
     try {
       const res = await this.request('/owner/boats');
-      return res.boats || res.data || MOCK_BOATS.slice(0, 2);
+      const raw = res.boats || res.data || MOCK_BOATS.slice(0, 2);
+      return Array.isArray(raw) ? raw.map(normalizeBoat) : [];
     } catch (e) {
-      return MOCK_BOATS.slice(0, 2);
+      return MOCK_BOATS.slice(0, 2).map(normalizeBoat);
     }
   }
 

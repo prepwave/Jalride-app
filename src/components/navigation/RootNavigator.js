@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme';
 import JalRideLogo from '../common/JalRideLogo';
@@ -26,11 +25,7 @@ export default function RootNavigator() {
 
   // Unauthenticated user -> Auth Stack (Login / Register)
   if (!user || !token) {
-    return (
-      <NavigationContainer>
-        <AuthNavigator />
-      </NavigationContainer>
-    );
+    return <AuthNavigator />;
   }
 
   // Strict Admin Gate: Only authorized admin email can render AdminNavigator
@@ -39,17 +34,15 @@ export default function RootNavigator() {
     user.email?.toLowerCase().trim() === ADMIN_EMAIL;
 
   return (
-    <NavigationContainer>
-      <View style={styles.container}>
-        {activeRole === 'admin' && isAuthorizedAdmin ? (
-          <AdminNavigator />
-        ) : activeRole === 'owner' && (user.role === 'owner' || isAuthorizedAdmin) ? (
-          <OwnerNavigator />
-        ) : (
-          <CustomerNavigator />
-        )}
-      </View>
-    </NavigationContainer>
+    <View style={styles.container}>
+      {activeRole === 'admin' && isAuthorizedAdmin ? (
+        <AdminNavigator />
+      ) : activeRole === 'owner' && (user.role === 'owner' || isAuthorizedAdmin) ? (
+        <OwnerNavigator />
+      ) : (
+        <CustomerNavigator />
+      )}
+    </View>
   );
 }
 

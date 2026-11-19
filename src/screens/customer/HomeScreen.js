@@ -65,7 +65,7 @@ export default function HomeScreen({ navigation }) {
               Har Har Gange 🙏
             </Text>
             <Text style={[styles.userName, isDark && styles.textLight]}>
-              {user?.name ? user.name : 'JalRide Varanasi'}
+              {typeof user?.name === 'string' && user.name.trim() ? user.name : 'JalRide Varanasi'}
             </Text>
           </View>
         </View>
@@ -84,7 +84,7 @@ export default function HomeScreen({ navigation }) {
             onPress={() => navigation.navigate('Profile')}
           >
             <Text style={styles.avatarText}>
-              {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              {typeof user?.name === 'string' && user.name.trim() ? user.name.trim().charAt(0).toUpperCase() : 'U'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -266,7 +266,12 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => navigation.navigate('BoatDetail', { boatId: boat._id, boat })}
               >
                 <Image
-                  source={{ uri: boat.images?.[0] || 'https://images.unsplash.com/photo-1598977123418-454555aa04f8?w=800&q=80' }}
+                  source={{
+                    uri:
+                      typeof boat.images?.[0] === 'string'
+                        ? boat.images[0]
+                        : boat.images?.[0]?.url || 'https://images.unsplash.com/photo-1598977123418-454555aa04f8?w=800&q=80',
+                  }}
                   style={styles.boatImage}
                 />
                 <View style={styles.boatBadgeOverlay}>

@@ -87,6 +87,8 @@ export default function GoogleSignInButton({
             }
 
             if (user) {
+              // Allow Android Custom Tab to cleanly dismiss before session update
+              await new Promise((resolve) => setTimeout(resolve, 300));
               const res = await loginWithSession(token, refresh, user);
               if (res.success) {
                 if (onSuccess) onSuccess(user);
