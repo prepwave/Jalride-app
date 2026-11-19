@@ -204,7 +204,7 @@ export default function OwnerDashboardScreen({ navigation }) {
                 style={styles.confirmBtn}
                 onPress={() => handleQuickAction('Confirmed & Slot Reserved', booking._id)}
               >
-                <Text style={styles.confirmBtnText}>✓ Confirm (स्वीकारें)</Text>
+                <Text style={styles.confirmBtnText}>✓ Confirm Booking</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

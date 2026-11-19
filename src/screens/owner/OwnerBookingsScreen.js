@@ -48,10 +48,10 @@ export default function OwnerBookingsScreen({ navigation }) {
     try {
       if (actionType === 'confirm') {
         await api.acceptOwnerBooking(bookingId);
-        Alert.alert('Ride Confirmed (स्वीकृत)', 'Passenger notified and seat reserved on boat.');
+        Alert.alert('Ride Confirmed', 'Passenger notified and seat reserved on boat.');
       } else if (actionType === 'hold') {
         await api.holdOwnerBooking(bookingId);
-        Alert.alert('Put on Hold (पेंडिंग)', 'Slot marked pending readiness confirmation.');
+        Alert.alert('Put on Hold', 'Slot marked pending readiness confirmation.');
       } else if (actionType === 'cancel') {
         await api.rejectOwnerBooking(bookingId, 'Operational adjustment');
         Alert.alert('Ride Cancelled', 'Booking cancelled and 100% refund credited back to rider.');

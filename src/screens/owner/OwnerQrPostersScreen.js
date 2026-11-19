@@ -66,7 +66,7 @@ export default function OwnerQrPostersScreen({ navigation }) {
         {/* Printable Standee Preview Card */}
         <Card style={styles.standeeCard}>
           <View style={styles.standeeHeader}>
-            <Text style={styles.standeeBrand}>JALRIDE (जलराइड)</Text>
+            <Text style={styles.standeeBrand}>JALRIDE</Text>
             <Text style={styles.standeeTag}>⚡ SCAN & BOARD IN 30 SECONDS</Text>
           </View>
 

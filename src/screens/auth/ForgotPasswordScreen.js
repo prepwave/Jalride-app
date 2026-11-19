@@ -42,17 +42,12 @@ export default function ForgotPasswordScreen({ navigation }) {
       const res = await api.forgotPassword(trimmedEmail);
       setIsSent(true);
       Alert.alert(
-        'Password Reset Sent',
-        res.message || 'If an account exists with that email, a password reset link has been dispatched.',
+        'Password Reset Code Sent 📨',
+        res.message || 'A password reset code has been sent to your email. Please enter it to choose a new password.',
         [
           {
             text: 'Enter Reset Code',
             onPress: () => navigation.navigate('ResetPassword', { email: trimmedEmail }),
-          },
-          {
-            text: 'Back to Login',
-            onPress: () => navigation.navigate('Login'),
-            style: 'cancel',
           },
         ]
       );
@@ -102,7 +97,7 @@ export default function ForgotPasswordScreen({ navigation }) {
             Account Recovery
           </Text>
           <Text style={styles.cardHeaderSub}>
-            We'll send a secure password reset token to your registered email.
+            We'll send a secure 6-digit password reset code to your registered email.
           </Text>
 
           {errorMessage ? (
@@ -114,7 +109,7 @@ export default function ForgotPasswordScreen({ navigation }) {
           {isSent ? (
             <View style={styles.successBox}>
               <Text style={styles.successText}>
-                ✓ Password reset token sent! Check your inbox and spam folder.
+                ✓ Password reset code sent! Check your inbox and spam folder.
               </Text>
             </View>
           ) : null}
@@ -133,7 +128,7 @@ export default function ForgotPasswordScreen({ navigation }) {
           />
 
           <Button
-            title={isSubmitting ? 'Sending Request...' : 'Send Reset Instructions ➔'}
+            title={isSubmitting ? 'Sending Code...' : 'Send Reset Code / OTP ➔'}
             onPress={handleSendReset}
             loading={isSubmitting}
             variant="primary"
@@ -144,7 +139,7 @@ export default function ForgotPasswordScreen({ navigation }) {
             style={styles.hasTokenLink}
             onPress={() => navigation.navigate('ResetPassword', { email: email.trim() })}
           >
-            <Text style={styles.hasTokenText}>Already have a reset token? Enter it here ➔</Text>
+            <Text style={styles.hasTokenText}>Already have a reset code? Enter it here ➔</Text>
           </TouchableOpacity>
         </Card>
       </ScrollView>

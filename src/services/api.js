@@ -76,7 +76,7 @@ class ApiService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), options.timeout || 12000);
+      const timeoutId = setTimeout(() => controller.abort(), options.timeout || 35000);
 
       const response = await fetch(url, {
         method: options.method || 'GET',
@@ -99,11 +99,18 @@ class ApiService {
         }
         const error = new Error(data.message || `Request failed (${response.status})`);
         error.status = response.status;
+        error.data = data;
         throw error;
       }
 
       return data;
     } catch (err) {
+      // Automatic single retry for cold start timeouts or transient network hiccups
+      if (options._retryCount === undefined && (err.name === 'AbortError' || (err.message && (err.message.includes('fetch') || err.message.includes('Network') || err.message.includes('aborted'))))) {
+        console.log(`[JalAPI] Retrying ${path} due to server cold start/network: ${err.message}`);
+        await new Promise((r) => setTimeout(r, 2000));
+        return this.request(path, { ...options, _retryCount: 1, timeout: 45000 });
+      }
       // Return structured offline fallback if network is unreachable
       console.warn(`[JalAPI] Network call to ${path} failed, using local resilient fallback:`, err.message);
       return this.handleFallback(path, options, err);
@@ -163,11 +170,44 @@ class ApiService {
     const data = await this.request('/auth/login', {
       method: 'POST',
       body: { email: (email || '').toLowerCase().trim(), password },
+      timeout: 45000,
     });
     if (data.token) {
       await this.setSession(data.token, data.refreshToken, data.user);
     }
     return data;
+  }
+
+  async googleLogin(idToken, role = 'customer') {
+    const data = await this.request('/auth/google', {
+      method: 'POST',
+      body: { idToken, role },
+      timeout: 45000,
+    });
+    if (data.token) {
+      await this.setSession(data.token, data.refreshToken, data.user);
+    }
+    return data;
+  }
+
+  async verifyEmail(token) {
+    const data = await this.request('/auth/verify-email', {
+      method: 'POST',
+      body: { token: (token || '').trim() },
+      timeout: 35000,
+    });
+    if (data.token) {
+      await this.setSession(data.token, data.refreshToken, data.user);
+    }
+    return data;
+  }
+
+  async resendVerification(email) {
+    return this.request('/auth/resend-verification', {
+      method: 'POST',
+      body: { email: (email || '').toLowerCase().trim() },
+      timeout: 35000,
+    });
   }
 
   async register(payload) {

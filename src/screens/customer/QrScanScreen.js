@@ -283,7 +283,7 @@ export default function QrScanScreen({ navigation }) {
             >
               <Text style={styles.payOptionEmoji}>💵</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.payOptionName}>Cash on Ghat (हाथ में नकद)</Text>
+                <Text style={styles.payOptionName}>Cash on Ghat (Direct to Captain)</Text>
                 <Text style={styles.payOptionDesc}>Hand cash directly to the boat captain</Text>
               </View>
               <View style={[styles.radioDot, walkinPayment === 'cash' && styles.radioDotActive]} />

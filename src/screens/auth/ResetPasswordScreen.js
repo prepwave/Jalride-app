@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -29,13 +29,38 @@ export default function ResetPasswordScreen({ navigation, route }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [resending, setResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    let timer;
+    if (resendCooldown > 0) {
+      timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
+  const handleResend = async () => {
+    if (!initialEmail || resendCooldown > 0) return;
+    setResending(true);
+    setErrorMessage('');
+    try {
+      await api.forgotPassword(initialEmail);
+      Alert.alert('Code Resent 📨', 'A fresh password reset code has been sent to your email.');
+      setResendCooldown(45);
+    } catch (err) {
+      setErrorMessage(err.message || 'Could not resend code. Please try again.');
+    } finally {
+      setResending(false);
+    }
+  };
 
   const handleResetPassword = async () => {
     setErrorMessage('');
     const cleanToken = token.trim();
 
     if (!cleanToken) {
-      setErrorMessage('Please enter the reset token received via email.');
+      setErrorMessage('Please enter the 6-digit reset code / OTP received via email.');
       return;
     }
     if (!password || password.length < 6) {
@@ -116,8 +141,8 @@ export default function ResetPasswordScreen({ navigation, route }) {
           ) : null}
 
           <Input
-            label="Verification Token"
-            placeholder="Paste code from email"
+            label="6-Digit Reset Code / OTP"
+            placeholder="Enter code or token from email"
             value={token}
             onChangeText={(t) => {
               setToken(t);
@@ -155,6 +180,28 @@ export default function ResetPasswordScreen({ navigation, route }) {
             variant="primary"
             style={styles.submitBtn}
           />
+
+          {initialEmail ? (
+            <TouchableOpacity
+              onPress={handleResend}
+              disabled={resendCooldown > 0 || resending}
+              style={{ marginTop: spacing.l, alignItems: 'center' }}
+            >
+              <Text
+                style={{
+                  color: resendCooldown > 0 ? colors.gray500 : colors.teal,
+                  fontWeight: '600',
+                  fontSize: 13,
+                }}
+              >
+                {resendCooldown > 0
+                  ? `Resend code in ${resendCooldown}s`
+                  : resending
+                  ? 'Sending fresh code...'
+                  : "Didn't receive the code? Resend Reset Code"}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </Card>
       </ScrollView>
     </KeyboardAvoidingView>

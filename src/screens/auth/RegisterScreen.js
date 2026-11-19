@@ -18,10 +18,11 @@ import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
 import Card from '../../components/common/Card';
 import JalRideLogo from '../../components/common/JalRideLogo';
+import GoogleSignInButton from '../../components/common/GoogleSignInButton';
 
 export default function RegisterScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
+  const { register, googleLogin } = useAuth();
   const { isDark } = useTheme();
 
   const [role, setRole] = useState('customer'); // 'customer' | 'owner'
@@ -32,6 +33,10 @@ export default function RegisterScreen({ navigation }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const handleGoogleSuccess = (user) => {
+    // Navigation is automatic via AuthContext state change in RootNavigator
+  };
 
   const handleRegister = async () => {
     setErrorMessage('');
@@ -73,12 +78,16 @@ export default function RegisterScreen({ navigation }) {
       const result = await register(payload);
       if (result.success) {
         Alert.alert(
-          'Registration Successful! 📨',
-          result.message || 'Your account has been created. A verification link has been sent to your email. Please click the link before logging in.',
+          'Account Created! 📨',
+          result.message || 'Please enter the 6-digit OTP verification code sent to your email to activate your account.',
           [
             {
-              text: 'Proceed to Login',
-              onPress: () => navigation.navigate('Login'),
+              text: 'Enter Verification Code',
+              onPress: () =>
+                navigation.navigate('OtpVerification', {
+                  email: trimmedEmail,
+                  message: result.message,
+                }),
             },
           ]
         );
@@ -157,13 +166,28 @@ export default function RegisterScreen({ navigation }) {
                 role === 'owner' && styles.roleTabTextActive,
               ]}
             >
-              Boat Owner (नाविक)
+              Boat Owner
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Form Card */}
         <Card style={styles.formCard}>
+          {/* Google Sign-Up */}
+          <GoogleSignInButton
+            title={`Sign up with Google as ${role === 'owner' ? 'Owner' : 'Rider'}`}
+            role={role}
+            onSuccess={handleGoogleSuccess}
+            onError={(msg) => setErrorMessage(msg)}
+            style={{ marginBottom: spacing.m }}
+          />
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR REGISTER WITH EMAIL</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
           {errorMessage ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>⚠️ {errorMessage}</Text>
@@ -329,6 +353,23 @@ const styles = StyleSheet.create({
   formCard: {
     padding: spacing.xl,
     marginBottom: spacing.xl,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.m,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.gray200,
+  },
+  dividerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.gray500,
+    paddingHorizontal: 12,
+    letterSpacing: 0.8,
   },
   errorBox: {
     backgroundColor: '#fef2f2',

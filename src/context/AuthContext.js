@@ -70,9 +70,66 @@ export function AuthProvider({ children }) {
       }
       return { success: false, message: res.message || 'Invalid credentials' };
     } catch (err) {
-      return { success: false, message: err.message || 'Login failed' };
+      const isUnverified = err.status === 403 && (err.message || '').toLowerCase().includes('verify');
+      return {
+        success: false,
+        status: err.status,
+        requiresEmailVerification: isUnverified,
+        message: err.message || 'Login failed',
+      };
     } finally {
       setLoading(false);
+    }
+  };
+
+  const googleLogin = async (idToken, role = 'customer') => {
+    setLoading(true);
+    try {
+      const res = await api.googleLogin(idToken, role);
+      if (res && res.token && res.user) {
+        if (res.user.role === 'admin' && res.user.email?.toLowerCase().trim() !== 'prepwave.pushpendra@gmail.com') {
+          res.user.role = 'customer';
+        }
+        setUser(res.user);
+        setToken(res.token);
+        setActiveRole(res.user.role || 'customer');
+        return { success: true, user: res.user };
+      }
+      return { success: false, message: res.message || 'Google sign-in failed' };
+    } catch (err) {
+      return { success: false, message: err.message || 'Google sign-in failed' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyEmailOtp = async (otpToken) => {
+    setLoading(true);
+    try {
+      const res = await api.verifyEmail(otpToken);
+      if (res && res.token && res.user) {
+        if (res.user.role === 'admin' && res.user.email?.toLowerCase().trim() !== 'prepwave.pushpendra@gmail.com') {
+          res.user.role = 'customer';
+        }
+        setUser(res.user);
+        setToken(res.token);
+        setActiveRole(res.user.role || 'customer');
+        return { success: true, user: res.user, message: res.message };
+      }
+      return { success: false, message: res.message || 'Verification failed' };
+    } catch (err) {
+      return { success: false, message: err.message || 'Verification failed' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendVerificationOtp = async (email) => {
+    try {
+      const res = await api.resendVerification(email);
+      return { success: true, message: res.message || 'Verification code resent' };
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to resend code' };
     }
   };
 
@@ -170,6 +227,9 @@ export function AuthProvider({ children }) {
         activeRole,
         switchRole,
         login,
+        googleLogin,
+        verifyEmailOtp,
+        resendVerificationOtp,
         register,
         logout,
         updateProfile,

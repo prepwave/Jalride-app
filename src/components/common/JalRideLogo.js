@@ -10,7 +10,7 @@ import { colors } from '../../theme';
  * Variants:
  * - 'badge': Official icon badge with deep Ganges teal background (#0a2e36), saffron hull (#e8963c), and mint-white sail (#dcedec).
  * - 'mark': Transparent background mark with boat hull, mast, sail, and river wave.
- * - 'header': Logo mark combined with the official stylized "JALRIDE / जलराइड" brand typography.
+ * - 'header': Logo mark combined with the official stylized "JALRIDE" brand typography.
  */
 export default function JalRideLogo({
   size = 48,
@@ -54,7 +54,7 @@ export default function JalRideLogo({
           <Text style={[styles.headerBrandTitle, textColor && { color: textColor }]}>
             JALRIDE
           </Text>
-          <Text style={styles.headerBrandSub}>जलराइड · वाराणसी</Text>
+          <Text style={styles.headerBrandSub}>Varanasi Smart Boat Mobility</Text>
         </View>
       </View>
     );

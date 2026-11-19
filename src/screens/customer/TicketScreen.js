@@ -95,7 +95,7 @@ export default function TicketScreen({ navigation, route }) {
           {/* Top Notch & Header */}
           <View style={styles.ticketTopBar}>
             <View>
-              <Text style={styles.jalBrand}>JALRIDE (जलराइड)</Text>
+              <Text style={styles.jalBrand}>JALRIDE</Text>
               <Text style={styles.govText}>Govt. Approved Ghat Navigation Pass</Text>
             </View>
             <Badge label={booking.status || 'Confirmed'} variant="success" />

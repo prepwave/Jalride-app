@@ -18,6 +18,7 @@ import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
 import Card from '../../components/common/Card';
 import JalRideLogo from '../../components/common/JalRideLogo';
+import GoogleSignInButton from '../../components/common/GoogleSignInButton';
 
 export default function LoginScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -28,9 +29,11 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showVerifyPrompt, setShowVerifyPrompt] = useState(false);
 
   const handleLogin = async () => {
     setErrorMessage('');
+    setShowVerifyPrompt(false);
     const trimmedEmail = email.trim().toLowerCase();
 
     if (!trimmedEmail) {
@@ -46,13 +49,22 @@ export default function LoginScreen({ navigation }) {
     try {
       const result = await login(trimmedEmail, password);
       if (!result.success) {
-        setErrorMessage(result.message || 'Login failed. Please check your credentials.');
+        if (result.requiresEmailVerification || result.status === 403) {
+          setShowVerifyPrompt(true);
+          setErrorMessage('Your account is registered but requires email verification.');
+        } else {
+          setErrorMessage(result.message || 'Login failed. Please check your credentials.');
+        }
       }
     } catch (err) {
-      setErrorMessage(err.message || 'Unable to connect to JalRide servers.');
+      setErrorMessage(err.message || 'Unable to connect to JalRide servers. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleGoogleSuccess = (user) => {
+    // Navigation is automatic via AuthContext state change in RootNavigator
   };
 
   return (
@@ -65,7 +77,10 @@ export default function LoginScreen({ navigation }) {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: Math.max(insets.top + spacing.m, 48), paddingBottom: Math.max(insets.bottom + spacing.l, 32) },
+          {
+            paddingTop: Math.max(insets.top + spacing.m, 48),
+            paddingBottom: Math.max(insets.bottom + spacing.l, 32),
+          },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -74,13 +89,13 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.brandSection}>
           <JalRideLogo size={68} style={{ marginBottom: spacing.m }} />
           <Text style={[styles.brandTitle, isDark && styles.textLight]}>
-            JALRIDE (जलराइड)
+            JALRIDE
           </Text>
           <Text style={styles.brandTagline}>
             Varanasi Smart Boat Booking & Ghat Navigation
           </Text>
           <Text style={styles.greetingText}>
-            Har Har Gange • हर हर गंगे 🙏
+            Verified Boats • Transparent Fares • Direct Digital Boarding
           </Text>
         </View>
 
@@ -90,8 +105,23 @@ export default function LoginScreen({ navigation }) {
             Sign In to Your Account
           </Text>
           <Text style={styles.cardHeaderSub}>
-            Book sacred Ganga boat rides or manage your fleet
+            Access your boat bookings, live tickets, and wallet balance
           </Text>
+
+          {/* Google Sign-In Option */}
+          <GoogleSignInButton
+            title="Sign in with Google"
+            role="customer"
+            onSuccess={handleGoogleSuccess}
+            style={{ marginBottom: spacing.m }}
+          />
+
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR SIGN IN WITH EMAIL</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
           {errorMessage ? (
             <View style={styles.errorBox}>
@@ -99,9 +129,29 @@ export default function LoginScreen({ navigation }) {
             </View>
           ) : null}
 
+          {showVerifyPrompt ? (
+            <View style={styles.verifyBox}>
+              <Text style={styles.verifyBoxText}>
+                Need to activate your account with an OTP code?
+              </Text>
+              <TouchableOpacity
+                style={styles.verifyBoxBtn}
+                onPress={() =>
+                  navigation.navigate('OtpVerification', {
+                    email: email.trim().toLowerCase(),
+                  })
+                }
+              >
+                <Text style={styles.verifyBoxBtnText}>
+                  Enter Verification Code / OTP ➔
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <Input
             label="Email Address"
-            placeholder="devotee@example.com"
+            placeholder="yourname@gmail.com"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -109,6 +159,7 @@ export default function LoginScreen({ navigation }) {
             onChangeText={(t) => {
               setEmail(t);
               if (errorMessage) setErrorMessage('');
+              if (showVerifyPrompt) setShowVerifyPrompt(false);
             }}
           />
 
@@ -148,14 +199,8 @@ export default function LoginScreen({ navigation }) {
             onPress={() => navigation.navigate('Register')}
             style={styles.registerLink}
           >
-            <Text style={styles.registerLinkText}>Register Here</Text>
+            <Text style={styles.registerLinkText}>Register here</Text>
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.securityNote}>
-          <Text style={styles.securityText}>
-            🔒 Protected by 256-bit encryption & UPI security standards.
-          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -165,90 +210,129 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.paper,
+    backgroundColor: '#f8fafc',
   },
   containerDark: {
-    backgroundColor: colors.canvasDark,
+    backgroundColor: '#0f172a',
   },
   scroll: {
-    flexGrow: 1,
     paddingHorizontal: spacing.l,
-    paddingTop: 64,
-    paddingBottom: 40,
+    flexGrow: 1,
     justifyContent: 'center',
   },
   brandSection: {
     alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  logoBadge: {
-    width: 68,
-    height: 68,
-    borderRadius: radii.l,
-    backgroundColor: colors.tealMist,
-    borderWidth: 2,
-    borderColor: colors.teal,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.m,
-    ...shadows.soft,
-  },
-  logoIcon: {
-    fontSize: 34,
+    marginBottom: spacing.l,
   },
   brandTitle: {
-    ...typography.h1,
-    color: colors.ink,
-    letterSpacing: 0.5,
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#0a2e36',
+    letterSpacing: 1.2,
+    marginBottom: 4,
   },
   brandTagline: {
-    ...typography.caption,
-    color: colors.gray600,
-    marginTop: 4,
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '600',
     textAlign: 'center',
+    marginBottom: 6,
   },
   greetingText: {
-    ...typography.bodySmall,
-    color: colors.sun,
+    fontSize: 12,
+    color: '#0284c7',
     fontWeight: '700',
-    marginTop: 6,
+    letterSpacing: 0.5,
+  },
+  textLight: {
+    color: '#f8fafc',
+  },
+  textMutedDark: {
+    color: '#94a3b8',
   },
   loginCard: {
-    padding: spacing.xl,
-    marginBottom: spacing.xl,
+    padding: spacing.l,
+    borderRadius: radii.l,
+    backgroundColor: '#ffffff',
+    ...shadows.m,
   },
   cardHeaderTitle: {
-    ...typography.h3,
-    color: colors.ink,
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 4,
   },
   cardHeaderSub: {
-    ...typography.caption,
-    color: colors.gray500,
-    marginTop: 4,
-    marginBottom: spacing.l,
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: spacing.m,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.m,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0',
+  },
+  dividerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    paddingHorizontal: 12,
+    letterSpacing: 0.8,
   },
   errorBox: {
     backgroundColor: '#fef2f2',
     borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: radii.s,
+    borderColor: '#fca5a5',
     padding: spacing.m,
+    borderRadius: radii.m,
     marginBottom: spacing.m,
   },
   errorText: {
-    ...typography.caption,
-    color: colors.danger,
+    color: '#b91c1c',
+    fontSize: 13,
     fontWeight: '600',
+  },
+  verifyBox: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+    padding: spacing.m,
+    borderRadius: radii.m,
+    marginBottom: spacing.m,
+  },
+  verifyBoxText: {
+    color: '#1e40af',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  verifyBoxBtn: {
+    backgroundColor: '#1d4ed8',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radii.s,
+    alignSelf: 'flex-start',
+  },
+  verifyBoxBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   forgotBtn: {
     alignSelf: 'flex-end',
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.s,
+    marginTop: -spacing.s,
+    marginBottom: spacing.m,
+    paddingVertical: 4,
   },
   forgotText: {
-    ...typography.caption,
-    color: colors.teal,
+    fontSize: 13,
     fontWeight: '600',
+    color: colors.teal,
   },
   loginBtn: {
     marginTop: spacing.s,
@@ -257,34 +341,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: spacing.s,
-    marginBottom: spacing.l,
+    marginTop: spacing.l,
+    gap: spacing.xs,
   },
   footerText: {
-    ...typography.bodyMedium,
-    color: colors.gray600,
+    fontSize: 14,
+    color: '#64748b',
   },
   registerLink: {
     paddingVertical: 4,
   },
   registerLinkText: {
-    ...typography.bodyMedium,
-    color: colors.teal,
+    fontSize: 14,
     fontWeight: '700',
-  },
-  securityNote: {
-    alignItems: 'center',
-  },
-  securityText: {
-    ...typography.caption,
-    color: colors.gray500,
-    textAlign: 'center',
-    fontSize: 11,
-  },
-  textLight: {
-    color: colors.textLight,
-  },
-  textMutedDark: {
-    color: colors.textMutedDark,
+    color: colors.teal,
   },
 });
