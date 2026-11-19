@@ -7,11 +7,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0a2e36"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jalride.app",
@@ -22,11 +17,6 @@
     },
     "android": {
       "package": "com.jalride.app",
-      "splash": {
-        "backgroundColor": "#0a2e36",
-        "image": "./assets/splash-icon.png",
-        "resizeMode": "contain"
-      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.ACCESS_FINE_LOCATION",
