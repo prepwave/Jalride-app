@@ -9,17 +9,21 @@
     },
     "preview": {
       "distribution": "internal",
+      "node": "22.23.1",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "image": "latest"
       }
     },
     "production": {
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "image": "latest"
       },
       "ios": {
         "simulator": false
-      }
+      },
+      "node": "22.23.1"
     }
   },
   "submit": {
