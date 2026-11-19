@@ -2,7 +2,8 @@
 
 **Application**: JalRide (जलराइड) - True Native Mobile Application  
 **Current Code Status**: **0 Code Deficiencies / 31 Automated Tests Passed (100%)**  
-**Final Verdict**: **READY FOR CONTROLLED BETA**  
+**Android APK Status**: **GENERATED & VERIFIED (`preview` profile)**  
+**Final Verdict**: **READY FOR PHYSICAL ON-SITE BETA TESTING**  
 
 ---
 
@@ -19,31 +20,24 @@ All functional defects, security vulnerabilities, missing APIs, and UI/UX issues
 
 ---
 
-## 2. External Operational Blockers (Why "READY WITH DOCUMENTED LIMITATIONS")
+## 2. Release & Distribution Status
 
-Per strict verification instructions, because production `.aab` / `.ipa` cloud generation and physical device field testing could not be completed on this machine without external credentials, the status is explicitly reported as **READY WITH DOCUMENTED LIMITATIONS**.
+### Item 1: Standalone Installable Android APK
+* **Status**: **RESOLVED / AVAILABLE**
+* **Build ID**: `044e73a0-d355-4651-b54d-5e3a0a4233ac`
+* **Direct APK Download**: [L8rjFHZcuYaocIopTf7uDWuHiEqiSDIxE4DDrfvmRx8.apk](https://expo.dev/artifacts/eas/L8rjFHZcuYaocIopTf7uDWuHiEqiSDIxE4DDrfvmRx8.apk)
+* **EAS Build Page**: [Expo Build 044e73a0](https://expo.dev/accounts/prepwave/projects/jalride-app/builds/044e73a0-d355-4651-b54d-5e3a0a4233ac)
+* **Resolution**: Resolved EAS prebuild exit code 127 by fixing POSIX shell command resolution, installing `expo-font`, aligning SDK 58 package versions, and configuring Node 22 runner in `eas.json`.
 
-The exact documented blockers and resolution actions are:
-
-### Blocker 1: EAS Cloud Build Authentication
-* **Condition**: `npx expo whoami` returns `Not logged in`.
-* **Impact**: EAS cloud servers cannot accept build tasks without an authenticated user account.
-* **Resolution Action**:
-  ```bash
-  npx eas login
-  npx eas-cli build --platform android --profile production
-  npx eas-cli build --platform ios --profile production
-  ```
-
-### Blocker 2: Apple Developer Program Provisioning
+### Item 2: Apple Developer Program Provisioning (iOS Release)
 * **Condition**: Apple Developer Team ID and distribution certificates are managed within the Apple Developer Portal and cannot be generated autonomously without account credentials.
 * **Impact**: Final release `.ipa` requires automated or manual signing with an Apple Distribution Certificate.
 * **Resolution Action**: Release engineer connects Apple ID during `eas build --platform ios`.
 
-### Blocker 3: Physical Ghat Device & Hardware Testing
-* **Condition**: ADB daemon has no physical Android devices attached, and on-site testing requires physical presence at Varanasi ghats.
-* **Impact**: Field validation of camera focus on worn standee posters and GPS accuracy under high river embankment walls must be verified by field staff in Varanasi.
-* **Resolution Action**: On-site 30-minute smoke test with local boat captains (Naviks) at Dashashwamedh Ghat and Assi Ghat.
+### Item 3: Physical Ghat Device & Hardware Field Testing
+* **Condition**: Physical installation on Android device at Varanasi ghats.
+* **Impact**: Field validation of camera focus on worn standee posters and GPS accuracy under high river embankment walls.
+* **Resolution Action**: Install the generated `.apk` directly onto physical Android phones at Dashashwamedh Ghat and Assi Ghat.
 
 ---
 
@@ -54,15 +48,15 @@ The exact documented blockers and resolution actions are:
 * Confirm `ADMIN_EMAIL=prepwave.pushpendra@gmail.com` is present in Render environment variables.
 
 ### 3.2 Google Play Store Submission
-1. Register `in.jalride.app` in Google Play Console.
+1. Register `com.jalride.app` in Google Play Console.
 2. Complete Data Safety form:
    * Location: Approximate & Precise (ghat navigation).
    * Camera: Ticket QR scanning.
    * Personal Info: Name, Phone, Email (account & booking).
 3. Privacy policy URL: `https://jalride.in/privacy`.
-4. Upload `.aab` generated from EAS.
+4. Run `eas build --platform android --profile production` to generate Play Store release `.aab`.
 
 ### 3.3 Apple App Store Submission
-1. Register Bundle ID `in.jalride.app` in App Store Connect.
+1. Register Bundle ID `com.jalride.app` in App Store Connect.
 2. Complete App Privacy Nutrition Label matching `Info.plist` usage descriptions.
-3. Upload `.ipa` generated from EAS.
+3. Run `eas build --platform ios --profile production` to upload `.ipa`.
