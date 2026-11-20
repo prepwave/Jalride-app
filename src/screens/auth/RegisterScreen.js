@@ -31,6 +31,7 @@ export default function RegisterScreen({ navigation }) {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [dpdpConsent, setDpdpConsent] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -62,6 +63,10 @@ export default function RegisterScreen({ navigation }) {
     }
     if (password !== confirmPassword) {
       setErrorMessage('Passwords do not match.');
+      return;
+    }
+    if (!dpdpConsent) {
+      setErrorMessage('Please agree to personal data processing under the DPDP Act 2023.');
       return;
     }
 
@@ -250,6 +255,19 @@ export default function RegisterScreen({ navigation }) {
             }}
           />
 
+          <TouchableOpacity
+            style={styles.dpdpRow}
+            onPress={() => setDpdpConsent(!dpdpConsent)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.dpdpBox, dpdpConsent && styles.dpdpBoxActive]}>
+              {dpdpConsent && <Text style={styles.dpdpCheck}>✓</Text>}
+            </View>
+            <Text style={[styles.dpdpText, isDark && styles.textMutedDark]}>
+              I consent to personal data collection & processing under the Digital Personal Data Protection (DPDP) Act 2023 for water transit & booking dispatch.
+            </Text>
+          </TouchableOpacity>
+
           <Button
             title={`Register as ${role === 'owner' ? 'Boat Owner' : 'Rider'} ➔`}
             onPress={handleRegister}
@@ -383,6 +401,38 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.danger,
     fontWeight: '600',
+  },
+  dpdpRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginVertical: spacing.m,
+  },
+  dpdpBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: colors.gray400,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    marginTop: 2,
+    backgroundColor: colors.white,
+  },
+  dpdpBoxActive: {
+    backgroundColor: colors.teal,
+    borderColor: colors.teal,
+  },
+  dpdpCheck: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  dpdpText: {
+    flex: 1,
+    ...typography.caption,
+    color: colors.gray600,
+    lineHeight: 16,
   },
   submitBtn: {
     marginTop: spacing.m,

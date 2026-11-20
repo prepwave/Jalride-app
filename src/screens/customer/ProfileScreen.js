@@ -181,11 +181,11 @@ export default function ProfileScreen({ navigation }) {
         <Card style={styles.settingsCard}>
           <TouchableOpacity
             style={styles.settingRow}
-            onPress={() => Alert.alert('DPDP Privacy Act 2023', 'Your personal data is encrypted and securely held under Indian Digital Personal Data Protection Act regulations. No GPS or biometric data is stored without explicit consent.')}
+            onPress={() => navigation.navigate('PrivacyDataRights')}
           >
             <View>
               <Text style={[styles.settingLabel, isDark && styles.textLight]}>Privacy & DPDP Compliance</Text>
-              <Text style={styles.settingSub}>Data privacy rights & consent manager</Text>
+              <Text style={styles.settingSub}>Personal data rights, erasure & Grievance Officer</Text>
             </View>
             <Text style={styles.arrowIcon}>→</Text>
           </TouchableOpacity>

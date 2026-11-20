@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { colors, radii, spacing, typography } from '../../theme';
@@ -24,6 +25,11 @@ export default function QrScanScreen({ navigation }) {
   const [torchOn, setTorchOn] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanningActive, setIsScanningActive] = useState(true);
+  const isScanningActiveRef = useRef(true);
+
+  // Manual code fallback modal
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualCode, setManualCode] = useState('');
 
   // Scanned data for standees or tickets
   const [scannedData, setScannedData] = useState(null);
@@ -32,6 +38,10 @@ export default function QrScanScreen({ navigation }) {
   const [walkinPayment, setWalkinPayment] = useState('cash'); // 'cash' | 'upi'
   const [isBooking, setIsBooking] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+
+  useEffect(() => {
+    isScanningActiveRef.current = isScanningActive;
+  }, [isScanningActive]);
 
   // Laser scanner animation
   const laserAnim = useRef(new Animated.Value(0)).current;
@@ -55,8 +65,9 @@ export default function QrScanScreen({ navigation }) {
     return () => animation.stop();
   }, [laserAnim]);
 
-  const handleBarcodeScanned = async ({ data }) => {
-    if (!isScanningActive || !data) return;
+  const handleBarcodeScanned = useCallback(async ({ data }) => {
+    if (!isScanningActiveRef.current || !data) return;
+    isScanningActiveRef.current = false;
     setIsScanningActive(false);
 
     try {
@@ -69,11 +80,14 @@ export default function QrScanScreen({ navigation }) {
         if (verifyRes && verifyRes.success) {
           Alert.alert(
             'Ticket Verified ✓',
-            `Passenger: ${verifyRes.booking?.customerName || 'Pilgrim Devotee'}\nTicket: ${verifyRes.booking?.ticketId || data}\nSeats: ${verifyRes.booking?.passengers || 2}\nStatus: Valid & Confirmed for Boarding.`,
+            `Passenger: ${verifyRes.booking?.customerName || 'Passenger'}\nTicket: ${verifyRes.booking?.ticketId || data}\nSeats: ${verifyRes.booking?.passengers || 2}\nStatus: Valid & Confirmed for Boarding.`,
             [
               {
                 text: 'OK',
-                onPress: () => setIsScanningActive(true),
+                onPress: () => {
+                  isScanningActiveRef.current = true;
+                  setIsScanningActive(true);
+                },
               },
             ]
           );
@@ -81,13 +95,21 @@ export default function QrScanScreen({ navigation }) {
           Alert.alert(
             'Invalid Ticket',
             verifyRes?.message || 'This ticket could not be verified by the navigation authority.',
-            [{ text: 'Scan Another', onPress: () => setIsScanningActive(true) }]
+            [
+              {
+                text: 'Scan Another',
+                onPress: () => {
+                  isScanningActiveRef.current = true;
+                  setIsScanningActive(true);
+                },
+              },
+            ]
           );
         }
         return;
       }
 
-      // 2. Check if scanned barcode is a Ghat Standee QR (instant walk-in)
+      // 2. Check if scanned barcode is a Boarding Point Standee QR (instant walk-in)
       let boatId = 'boat-001';
       if (data.includes('boatId=')) {
         const match = data.match(/boatId=([^&]+)/);
@@ -102,8 +124,8 @@ export default function QrScanScreen({ navigation }) {
 
       setScannedData({
         boatId,
-        boatName: boat.boatName || 'Maa Ganga Express Bajra',
-        ghat: statusRes.currentGhat || boat.location || 'Assi Ghat',
+        boatName: boat.boatName || 'Express Waterways Boat',
+        ghat: statusRes.currentGhat || boat.location || 'Boarding Point',
         price: boat.price || 350,
         seatsRemaining: statusRes.seatsRemaining || 18,
       });
@@ -113,9 +135,28 @@ export default function QrScanScreen({ navigation }) {
       Alert.alert(
         'Scan Error',
         err.message || 'Unable to resolve QR code data. Please try again.',
-        [{ text: 'OK', onPress: () => setIsScanningActive(true) }]
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              isScanningActiveRef.current = true;
+              setIsScanningActive(true);
+            },
+          },
+        ]
       );
     }
+  }, []);
+
+  const handleManualCodeSubmit = () => {
+    if (!manualCode.trim()) {
+      Alert.alert('Required', 'Please enter a Ticket ID or Boat Code.');
+      return;
+    }
+    setShowManualModal(false);
+    const code = manualCode.trim();
+    setManualCode('');
+    handleBarcodeScanned({ data: code });
   };
 
   const handleConfirmWalkin = async () => {
@@ -157,7 +198,7 @@ export default function QrScanScreen({ navigation }) {
           style={StyleSheet.absoluteFillObject}
           facing="back"
           enableTorch={torchOn}
-          onBarcodeScanned={isScanningActive ? handleBarcodeScanned : undefined}
+          onBarcodeScanned={handleBarcodeScanned}
           barcodeScannerSettings={{
             barcodeTypes: ['qr'],
           }}
@@ -167,21 +208,27 @@ export default function QrScanScreen({ navigation }) {
           <Text style={styles.permissionEmoji}>📷</Text>
           <Text style={styles.permissionTitle}>Camera Permission Required</Text>
           <Text style={styles.permissionSubtitle}>
-            JalRide requires camera access to scan ghat standee posters and verify digital boarding passes.
+            JalRide requires camera access to scan boat standee posters and digital boarding passes.
           </Text>
           <Button
             title="Grant Camera Access"
             onPress={requestPermission}
             style={{ marginTop: spacing.l, width: 220 }}
           />
+          <TouchableOpacity
+            style={styles.manualFallbackBtn}
+            onPress={() => setShowManualModal(true)}
+          >
+            <Text style={styles.manualFallbackBtnText}>⌨️ Enter Ticket ID or Boat Code Manually</Text>
+          </TouchableOpacity>
         </View>
       )}
 
       {/* Top Header overlay */}
       <View style={styles.headerOverlay}>
         <Header
-          title="⚡ Instant Ghat Boarding"
-          subtitle="Scan standee poster at any Varanasi ghat"
+          title="⚡ Instant Boarding Scanner"
+          subtitle="Scan standee poster or digital boarding pass"
           onBack={() => navigation.goBack()}
           transparent
           style={{ paddingTop: 40 }}
@@ -215,13 +262,21 @@ export default function QrScanScreen({ navigation }) {
         </View>
 
         <Text style={styles.scannerHint}>
-          Align the QR code from the boat standee or ticket inside the frame.
+          Align the QR code from the boat standee or boarding ticket inside the frame.
         </Text>
+
+        {/* Manual Recovery Button */}
+        <TouchableOpacity
+          style={styles.manualEntryBtn}
+          onPress={() => setShowManualModal(true)}
+        >
+          <Text style={styles.manualEntryBtnText}>⌨️ Can't scan? Enter code manually</Text>
+        </TouchableOpacity>
 
         {isVerifying && (
           <View style={styles.verifyingPill}>
             <ActivityIndicator color={colors.teal} size="small" />
-            <Text style={styles.verifyingText}>  Verifying with Ghat Navigation Registry...</Text>
+            <Text style={styles.verifyingText}>  Verifying with Navigation Registry...</Text>
           </View>
         )}
 
@@ -251,6 +306,7 @@ export default function QrScanScreen({ navigation }) {
         visible={showWalkinSheet}
         onClose={() => {
           setShowWalkinSheet(false);
+          isScanningActiveRef.current = true;
           setIsScanningActive(true);
         }}
         title="⚡ Walk-In Ghat Boarding"
@@ -313,6 +369,46 @@ export default function QrScanScreen({ navigation }) {
           </View>
         )}
       </BottomSheet>
+
+      {/* Manual Entry Fallback Modal */}
+      <Modal
+        visible={showManualModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowManualModal(false)}
+      >
+        <View style={styles.manualModalOverlay}>
+          <View style={styles.manualModalCard}>
+            <Text style={styles.manualModalTitle}>Manual Verification</Text>
+            <Text style={styles.manualModalSubtitle}>
+              Enter a Boarding Ticket ID (e.g. JR-123456) or Boat Code to verify or book.
+            </Text>
+
+            <TextInput
+              style={styles.manualModalInput}
+              placeholder="e.g. JR-102938 or boat-001"
+              placeholderTextColor={colors.gray400}
+              value={manualCode}
+              onChangeText={setManualCode}
+              autoCapitalize="characters"
+            />
+
+            <View style={styles.manualModalBtnRow}>
+              <Button
+                title="Cancel"
+                variant="outline"
+                onPress={() => setShowManualModal(false)}
+                style={{ flex: 1, marginRight: spacing.s }}
+              />
+              <Button
+                title="Verify"
+                onPress={handleManualCodeSubmit}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -344,6 +440,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.s,
     lineHeight: 20,
+  },
+  manualFallbackBtn: {
+    marginTop: spacing.l,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.l,
+    borderRadius: radii.m,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  manualFallbackBtnText: {
+    ...typography.button,
+    color: colors.white,
+    fontSize: 14,
+  },
+  manualEntryBtn: {
+    marginTop: spacing.m,
+    backgroundColor: 'rgba(10, 46, 54, 0.85)',
+    paddingVertical: 10,
+    paddingHorizontal: spacing.l,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  manualEntryBtnText: {
+    ...typography.caption,
+    color: '#8fd6de',
+    fontWeight: '700',
+  },
+  manualModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  manualModalCard: {
+    width: '100%',
+    backgroundColor: colors.white,
+    borderRadius: radii.l,
+    padding: spacing.xl,
+  },
+  manualModalTitle: {
+    ...typography.h3,
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  manualModalSubtitle: {
+    ...typography.caption,
+    color: colors.gray600,
+    marginBottom: spacing.l,
+  },
+  manualModalInput: {
+    height: 48,
+    borderWidth: 1.5,
+    borderColor: colors.gray300,
+    borderRadius: radii.m,
+    paddingHorizontal: spacing.m,
+    ...typography.bodyMedium,
+    marginBottom: spacing.l,
+  },
+  manualModalBtnRow: {
+    flexDirection: 'row',
   },
   headerOverlay: {
     position: 'absolute',

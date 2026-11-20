@@ -325,20 +325,24 @@ class ApiService {
     }
   }
 
+  async getBoatCalendar(boatId, month) {
+    try {
+      const ym = month || new Date().toISOString().slice(0, 7);
+      const res = await this.request(`/boats/${boatId}/calendar?month=${ym}`);
+      return res || { success: true, days: [] };
+    } catch (e) {
+      console.warn('[JalAPI] Failed to fetch calendar:', e.message);
+      return { success: false, days: [] };
+    }
+  }
+
   async getBoatAvailability(boatId, date) {
     try {
-      return await this.request(`/boats/${boatId}/day?date=${date}`);
+      const res = await this.request(`/boats/${boatId}/day?date=${date}`);
+      return res || { date, slots: [] };
     } catch (e) {
-      return {
-        date,
-        slots: MOCK_SLOTS.map(s => ({
-          time: s.time,
-          available: true,
-          seatsRemaining: 24,
-          label: s.label,
-          badge: s.badge,
-        })),
-      };
+      console.warn('[JalAPI] Failed to fetch day availability:', e.message);
+      return { date, slots: [] };
     }
   }
 
@@ -409,17 +413,34 @@ class ApiService {
   }
 
   async validateCoupon(code, amount) {
-    try {
-      return await this.request('/coupons/validate', {
-        method: 'POST',
-        body: { code, amount },
-      });
-    } catch (e) {
-      if (code && code.toUpperCase().includes('JAL')) {
-        return { success: true, valid: true, discountAmount: 100, message: `Promo code ${code} applied (₹100 OFF)` };
-      }
-      throw new Error('Invalid or expired coupon code. Try code: JALRIDE100');
+    if (!code || !code.trim()) {
+      throw new Error('Please enter a coupon code.');
     }
+    const cleanCode = code.trim().toUpperCase();
+    const res = await this.request('/coupons/validate', {
+      method: 'POST',
+      body: { code: cleanCode, amount: Number(amount) },
+    });
+    if (res && res.valid) {
+      return {
+        success: true,
+        valid: true,
+        code: res.code || cleanCode,
+        description: res.description || '',
+        discountAmount: res.discount || 0,
+        finalAmount: res.finalAmount,
+        message: `Coupon ${res.code || cleanCode} applied: saved ₹${res.discount || 0}`,
+      };
+    }
+    throw new Error(res?.message || 'Invalid or inactive coupon code');
+  }
+
+  // DPDP Act 2023: Right to Erasure / Personal Data Deletion Request
+  async requestDataErasure(reason = 'User requested DPDP account deletion') {
+    return this.request('/auth/delete-account', {
+      method: 'POST',
+      body: { reason },
+    });
   }
 
   // ==========================================

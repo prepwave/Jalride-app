@@ -62,10 +62,10 @@ export default function HomeScreen({ navigation }) {
           <JalRideLogo size={38} variant="badge" />
           <View>
             <Text style={[styles.welcomeSub, isDark && styles.textMutedDark]}>
-              Har Har Gange 🙏
+              Smart Water Tourism
             </Text>
             <Text style={[styles.userName, isDark && styles.textLight]}>
-              {typeof user?.name === 'string' && user.name.trim() ? user.name : 'JalRide Varanasi'}
+              {typeof user?.name === 'string' && user.name.trim() ? user.name : 'Welcome to JalRide'}
             </Text>
           </View>
         </View>
@@ -106,14 +106,14 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.heroCard}>
             <View style={styles.heroOverlay}>
               <Badge
-                label="VARANASI GANGA GHATS"
+                label="GLOBAL SMART BOAT PLATFORM"
                 variant="sun"
                 size="small"
                 style={styles.heroBadge}
               />
               <Text style={styles.heroTitle}>Book Safe & Smart Boat Rides</Text>
               <Text style={styles.heroSubtitle}>
-                Instant ghat QR boarding or advance slot reservations across 84 holy ghats.
+                Instant QR boarding & scheduled reservations across rivers, lakes, harbours & waterways worldwide.
               </Text>
 
               <View style={styles.heroBtnRow}>
@@ -128,7 +128,7 @@ export default function HomeScreen({ navigation }) {
                   style={styles.heroSecondaryBtn}
                   onPress={() => navigation.navigate('ScanQR')}
                 >
-                  <Text style={styles.heroSecondaryBtnText}>⚡ Scan Ghat QR</Text>
+                  <Text style={styles.heroSecondaryBtnText}>⚡ Scan Boarding QR</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -186,17 +186,17 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Ganga Aarti Special Banner */}
+        {/* Scenic Experiences Banner */}
         <TouchableOpacity
           activeOpacity={0.9}
           style={styles.aartiBanner}
-          onPress={() => navigation.navigate('Boats', { filterType: 'Bajra' })}
+          onPress={() => navigation.navigate('Boats')}
         >
           <View style={styles.aartiLeft}>
-            <Text style={styles.aartiTag}>🔥 EVENING GANGA AARTI</Text>
-            <Text style={styles.aartiHeading}>Dashashwamedh Ghat Aarti Bajra</Text>
+            <Text style={styles.aartiTag}>🌊 WATER TOURISM EXPERIENCES</Text>
+            <Text style={styles.aartiHeading}>Scenic Cruises, Ferries & Private Charters</Text>
             <Text style={styles.aartiDesc}>
-              Front-row river views of the sacred Maha Aarti with traditional music.
+              Discover curated water journeys, heritage cruises, and certified boat operators.
             </Text>
           </View>
           <View style={styles.aartiRight}>
@@ -204,10 +204,10 @@ export default function HomeScreen({ navigation }) {
           </View>
         </TouchableOpacity>
 
-        {/* Ghat Filter Chips */}
+        {/* Location & Boarding Filter Chips */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, isDark && styles.textLight]}>
-            Explore by Ghat
+            Explore Destinations & Boarding Points
           </Text>
         </View>
 
@@ -323,33 +323,33 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* Trust Badges */}
+        {/* Trust Section */}
         <View style={styles.trustSection}>
           <Text style={[styles.trustTitle, isDark && styles.textLight]}>
-            The JalRide Safety Guarantee
+            Why Book with JalRide
           </Text>
           <View style={styles.trustGrid}>
             <View style={styles.trustCard}>
               <Text style={styles.trustIcon}>🦺</Text>
-              <Text style={styles.trustHeading}>100% Life Jackets</Text>
-              <Text style={styles.trustSub}>Compulsory safety jackets provided for all riders.</Text>
+              <Text style={styles.trustHeading}>Safety First</Text>
+              <Text style={styles.trustSub}>Owner-reported life jackets and emergency gear aboard.</Text>
             </View>
 
             <View style={styles.trustCard}>
-              <Text style={styles.trustIcon}>⚖️</Text>
-              <Text style={styles.trustHeading}>Fair Govt Rates</Text>
-              <Text style={styles.trustSub}>No bargaining or inflated tourist pricing on ghats.</Text>
+              <Text style={styles.trustIcon}>💳</Text>
+              <Text style={styles.trustHeading}>Transparent Pricing</Text>
+              <Text style={styles.trustSub}>Direct operator pricing with clear fare breakdowns and zero hidden charges.</Text>
             </View>
 
             <View style={styles.trustCard}>
               <Text style={styles.trustIcon}>🛡️</Text>
-              <Text style={styles.trustHeading}>Verified Captains</Text>
-              <Text style={styles.trustSub}>All naviks are police & navigation authority certified.</Text>
+              <Text style={styles.trustHeading}>Verified Fleet Profiles</Text>
+              <Text style={styles.trustSub}>Detailed vessel specs, owner experience and reported safety equipment.</Text>
             </View>
           </View>
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 100 + Math.max(insets.bottom, 16) }} />
       </ScrollView>
     </View>
   );

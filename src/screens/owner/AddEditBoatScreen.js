@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   StatusBar,
   Alert,
+  Switch,
 } from 'react-native';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
@@ -19,12 +20,26 @@ import { MOCK_GHATS } from '../../services/mockData';
 
 const ALL_AMENITIES = [
   'Life Jackets',
-  'Pilgrim Guide',
-  'Ganga Aarti Special View',
-  'Sound System & Shehnai',
+  'First Aid Kit',
+  'Waterproof Storage',
+  'Tour Guide / Narrator',
+  'Sound System & Music',
+  'Cushioned Seating',
   'Mineral Water',
-  'Cushioned Mattresses',
-  'Onboard Bio-Toilet',
+  'Onboard Restroom',
+  'Canopy / Sun Shade',
+];
+
+const BOAT_CATEGORIES = [
+  'Motor Boat',
+  'Speed Boat',
+  'Row Boat',
+  'Pedal Boat',
+  'Shikara',
+  'Bajra / Deck Cruiser',
+  'Houseboat',
+  'Luxury Yacht',
+  'Ferry',
 ];
 
 export default function AddEditBoatScreen({ navigation, route }) {
@@ -34,12 +49,36 @@ export default function AddEditBoatScreen({ navigation, route }) {
 
   const [boatName, setBoatName] = useState(boat?.boatName || '');
   const [location, setLocation] = useState(boat?.location || 'Assi Ghat');
-  const [boatType, setBoatType] = useState(boat?.boatType || 'Bajra (Luxury)');
-  const [capacity, setCapacity] = useState(boat ? String(boat.capacity) : '25');
+  const [boatType, setBoatType] = useState(boat?.boatType || 'Motor Boat');
+  const [capacity, setCapacity] = useState(boat ? String(boat.capacity) : '20');
   const [price, setPrice] = useState(boat ? String(boat.price) : '350');
   const [description, setDescription] = useState(boat?.description || '');
+  const [experience, setExperience] = useState(boat?.owner?.experience ? String(boat.owner.experience) : '5');
+
+  // Safety Information fields
+  const [lifeJacketsAvailable, setLifeJacketsAvailable] = useState(
+    boat?.safety?.lifeJacketsAvailable ?? true
+  );
+  const [lifeJacketsCount, setLifeJacketsCount] = useState(
+    boat?.safety?.lifeJacketsCount ? String(boat.safety.lifeJacketsCount) : '20'
+  );
+  const [childLifeJackets, setChildLifeJackets] = useState(
+    boat?.safety?.childLifeJackets ?? true
+  );
+  const [firstAidKit, setFirstAidKit] = useState(
+    boat?.safety?.firstAidKit ?? true
+  );
+
+  // Whole boat booking
+  const [allowWholeBoatBooking, setAllowWholeBoatBooking] = useState(
+    boat?.allowWholeBoatBooking ?? false
+  );
+  const [wholeBoatPrice, setWholeBoatPrice] = useState(
+    boat?.wholeBoatPrice ? String(boat.wholeBoatPrice) : '3500'
+  );
+
   const [selectedAmenities, setSelectedAmenities] = useState(
-    boat?.amenities || ['Life Jackets', 'Pilgrim Guide']
+    boat?.amenities || ['Life Jackets', 'First Aid Kit']
   );
   const [isSaving, setIsSaving] = useState(false);
 
@@ -67,10 +106,19 @@ export default function AddEditBoatScreen({ navigation, route }) {
         boatName: boatName.trim(),
         location,
         boatType,
-        capacity: parseInt(capacity) || 25,
+        capacity: parseInt(capacity) || 20,
         price: parseFloat(price) || 350,
         description: description.trim(),
         amenities: selectedAmenities,
+        allowWholeBoatBooking,
+        wholeBoatPrice: allowWholeBoatBooking ? (parseFloat(wholeBoatPrice) || 0) : undefined,
+        safety: {
+          lifeJacketsAvailable,
+          lifeJacketsCount: lifeJacketsAvailable ? (parseInt(lifeJacketsCount) || 0) : 0,
+          childLifeJackets,
+          firstAidKit,
+        },
+        experience: parseInt(experience) || 0,
       };
 
       if (isEditing) {
@@ -81,7 +129,7 @@ export default function AddEditBoatScreen({ navigation, route }) {
 
       Alert.alert(
         isEditing ? 'Boat Updated' : 'Boat Registered',
-        `${boatName} has been saved and submitted to the JalRide navigation registry.`,
+        `${boatName} has been saved to the JalRide navigation directory.`,
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (err) {
@@ -131,18 +179,18 @@ export default function AddEditBoatScreen({ navigation, route }) {
         </ScrollView>
 
         {/* Boat Category */}
-        <Text style={[styles.label, isDark && styles.textLight]}>Vessel Category</Text>
-        <View style={styles.catGrid}>
-          {['Bajra (Luxury)', 'Motor Boat', 'Hand Boat (Rowing)'].map((cat) => (
+        <Text style={[styles.label, isDark && styles.textLight]}>Boat Category / Vessel Type</Text>
+        <View style={styles.catWrap}>
+          {BOAT_CATEGORIES.map((cat) => (
             <TouchableOpacity
               key={cat}
               style={[
-                styles.catCard,
-                boatType === cat && styles.catCardActive,
+                styles.catPill,
+                boatType === cat && styles.catPillActive,
               ]}
               onPress={() => setBoatType(cat)}
             >
-              <Text style={[styles.catText, boatType === cat && styles.catTextActive]}>
+              <Text style={[styles.catPillText, boatType === cat && styles.catPillTextActive]}>
                 {cat}
               </Text>
             </TouchableOpacity>
@@ -156,7 +204,7 @@ export default function AddEditBoatScreen({ navigation, route }) {
             <TextInput
               style={styles.input}
               keyboardType="numeric"
-              placeholder="25"
+              placeholder="20"
               value={capacity}
               onChangeText={setCapacity}
             />
@@ -173,6 +221,100 @@ export default function AddEditBoatScreen({ navigation, route }) {
             />
           </View>
         </View>
+
+        {/* Whole Boat Charter Option */}
+        <Card style={styles.optionCard}>
+          <View style={styles.rowBetween}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.optionTitle}>Allow Full Boat Private Charter</Text>
+              <Text style={styles.optionSub}>Passengers can reserve entire boat for private trips</Text>
+            </View>
+            <Switch
+              value={allowWholeBoatBooking}
+              onValueChange={setAllowWholeBoatBooking}
+              thumbColor={allowWholeBoatBooking ? colors.teal : colors.gray300}
+              trackColor={{ true: colors.tealMist, false: colors.gray200 }}
+            />
+          </View>
+          {allowWholeBoatBooking && (
+            <View style={{ marginTop: spacing.m }}>
+              <Text style={[styles.label, { marginTop: 0 }]}>Whole Boat Charter Price (₹)</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="3500"
+                value={wholeBoatPrice}
+                onChangeText={setWholeBoatPrice}
+              />
+            </View>
+          )}
+        </Card>
+
+        {/* Safety Information Section */}
+        <Text style={[styles.sectionHeading, isDark && styles.textLight]}>Safety Equipment & Compliance</Text>
+        <Card style={styles.safetyCard}>
+          <View style={styles.rowBetween}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.optionTitle}>🦺 Adult Life Jackets Available</Text>
+              <Text style={styles.optionSub}>Verified life vests for passenger capacity</Text>
+            </View>
+            <Switch
+              value={lifeJacketsAvailable}
+              onValueChange={setLifeJacketsAvailable}
+              thumbColor={lifeJacketsAvailable ? colors.teal : colors.gray300}
+              trackColor={{ true: colors.tealMist, false: colors.gray200 }}
+            />
+          </View>
+
+          {lifeJacketsAvailable && (
+            <View style={{ marginTop: spacing.m }}>
+              <Text style={[styles.label, { marginTop: 0 }]}>Number of Available Life Jackets</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="20"
+                value={lifeJacketsCount}
+                onChangeText={setLifeJacketsCount}
+              />
+            </View>
+          )}
+
+          <View style={[styles.rowBetween, { marginTop: spacing.m }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.optionTitle}>👶 Child-Sized Life Vests</Text>
+              <Text style={styles.optionSub}>Specialized safety jackets for children</Text>
+            </View>
+            <Switch
+              value={childLifeJackets}
+              onValueChange={setChildLifeJackets}
+              thumbColor={childLifeJackets ? colors.teal : colors.gray300}
+              trackColor={{ true: colors.tealMist, false: colors.gray200 }}
+            />
+          </View>
+
+          <View style={[styles.rowBetween, { marginTop: spacing.m }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.optionTitle}>🩹 First Aid Kit Onboard</Text>
+              <Text style={styles.optionSub}>Emergency first aid medical supplies</Text>
+            </View>
+            <Switch
+              value={firstAidKit}
+              onValueChange={setFirstAidKit}
+              thumbColor={firstAidKit ? colors.teal : colors.gray300}
+              trackColor={{ true: colors.tealMist, false: colors.gray200 }}
+            />
+          </View>
+        </Card>
+
+        {/* Operating Experience */}
+        <Text style={[styles.label, isDark && styles.textLight]}>Captain / Operator Experience (Years)</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="numeric"
+          placeholder="e.g. 8"
+          value={experience}
+          onChangeText={setExperience}
+        />
 
         {/* Description */}
         <Text style={[styles.label, isDark && styles.textLight]}>Ride Description</Text>
@@ -221,7 +363,7 @@ export default function AddEditBoatScreen({ navigation, route }) {
 
         {/* Submit Button */}
         <Button
-          title={isEditing ? 'Save Changes' : 'Register Vessel & Create Standee'}
+          title={isEditing ? 'Save Changes' : 'Register Vessel'}
           onPress={handleSave}
           loading={isSaving}
           style={{ marginTop: spacing.xl }}
@@ -291,6 +433,62 @@ const styles = StyleSheet.create({
   },
   ghatTextActive: {
     color: colors.white,
+  },
+  catWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.s,
+    marginBottom: spacing.m,
+  },
+  catPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: radii.full,
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: colors.gray300,
+  },
+  catPillActive: {
+    backgroundColor: colors.tealMist,
+    borderColor: colors.teal,
+  },
+  catPillText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  catPillTextActive: {
+    color: colors.teal,
+    fontWeight: '700',
+  },
+  optionCard: {
+    padding: spacing.m,
+    marginVertical: spacing.m,
+  },
+  optionTitle: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  optionSub: {
+    ...typography.caption,
+    color: colors.gray500,
+    marginTop: 2,
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionHeading: {
+    ...typography.h3,
+    color: colors.ink,
+    marginTop: spacing.l,
+    marginBottom: spacing.s,
+  },
+  safetyCard: {
+    padding: spacing.m,
+    marginBottom: spacing.m,
   },
   catGrid: {
     flexDirection: 'row',

@@ -9,6 +9,7 @@ import {
   StatusBar,
   Share,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -21,6 +22,7 @@ import Card from '../../components/common/Card';
 export default function BoatDetailScreen({ navigation, route }) {
   const { boatId, boat: passedBoat } = route.params || {};
   const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { updateBookingDraft } = useAuth();
   const [boat, setBoat] = useState(passedBoat || null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -45,7 +47,7 @@ export default function BoatDetailScreen({ navigation, route }) {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Book ${boat.boatName} on JalRide at ${boat.location} for just ₹${boat.price}! Safe, govt-approved rates.`,
+        message: `Book ${boat.boatName} on JalRide at ${boat.location} for ₹${boat.price}! Reliable water tourism & boat booking.`,
         title: boat.boatName,
       });
     } catch (_) {}
@@ -125,7 +127,7 @@ export default function BoatDetailScreen({ navigation, route }) {
           <Text style={[styles.boatTitle, isDark && styles.textLight]}>{boat.boatName}</Text>
 
           <View style={styles.locationRow}>
-            <Text style={styles.locationText}>📍 Boarding Ghat: <Text style={{ fontWeight: '700', color: colors.teal }}>{boat.location}</Text></Text>
+            <Text style={styles.locationText}>📍 Boarding Point: <Text style={{ fontWeight: '700', color: colors.teal }}>{boat.location}</Text></Text>
           </View>
 
           {/* Quick Stats Grid */}
@@ -137,52 +139,83 @@ export default function BoatDetailScreen({ navigation, route }) {
             </View>
 
             <View style={styles.statBox}>
-              <Text style={styles.statIcon}>🛡️</Text>
-              <Text style={styles.statVal}>Certified</Text>
-              <Text style={styles.statLbl}>Govt Inspection</Text>
+              <Text style={styles.statIcon}>🦺</Text>
+              <Text style={styles.statVal}>
+                {boat.safety?.lifeJacketsCount
+                  ? `${boat.safety.lifeJacketsCount} Available`
+                  : boat.safety?.lifeJacketsAvailable
+                  ? 'Equipped'
+                  : 'On Request'}
+              </Text>
+              <Text style={styles.statLbl}>Life Jackets</Text>
             </View>
 
             <View style={styles.statBox}>
-              <Text style={styles.statIcon}>🦺</Text>
-              <Text style={styles.statVal}>Equipped</Text>
-              <Text style={styles.statLbl}>Life Jackets</Text>
+              <Text style={styles.statIcon}>🩹</Text>
+              <Text style={styles.statVal}>
+                {boat.safety?.firstAidKit ? 'Equipped' : 'Standard'}
+              </Text>
+              <Text style={styles.statLbl}>First Aid</Text>
             </View>
           </View>
 
+          {/* Whole Boat Charter Option if enabled by owner */}
+          {boat.allowWholeBoatBooking && (
+            <Card style={styles.charterCard}>
+              <View style={styles.rowBetween}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.charterTitle}>🛥️ Full Boat Private Charter</Text>
+                  <Text style={styles.charterSub}>Reserve entire vessel exclusively for your party</Text>
+                </View>
+                <Text style={styles.charterPrice}>₹{boat.wholeBoatPrice || boat.price * boat.capacity}</Text>
+              </View>
+            </Card>
+          )}
+
           {/* Description */}
           <Text style={[styles.sectionTitle, isDark && styles.textLight]}>About the Ride</Text>
-          <Text style={styles.descriptionText}>{boat.description}</Text>
+          <Text style={styles.descriptionText}>{boat.description || 'Reliable water tourism and transport booking on JalRide.'}</Text>
 
           {/* Amenities Checklist */}
-          <Text style={[styles.sectionTitle, isDark && styles.textLight]}>Onboard Amenities</Text>
-          <View style={styles.amenitiesGrid}>
-            {boat.amenities?.map((amenity, idx) => (
-              <View key={idx} style={styles.amenityItem}>
-                <View style={styles.checkCircle}>
-                  <Text style={styles.checkIcon}>✓</Text>
-                </View>
-                <Text style={styles.amenityLabel}>{amenity}</Text>
+          {Array.isArray(boat.amenities) && boat.amenities.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, isDark && styles.textLight]}>Onboard Amenities</Text>
+              <View style={styles.amenitiesGrid}>
+                {boat.amenities.map((amenity, idx) => (
+                  <View key={idx} style={styles.amenityItem}>
+                    <View style={styles.checkCircle}>
+                      <Text style={styles.checkIcon}>✓</Text>
+                    </View>
+                    <Text style={styles.amenityLabel}>{amenity}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            </>
+          )}
 
-          {/* Captain / Navik Profile */}
-          <Text style={[styles.sectionTitle, isDark && styles.textLight]}>Navik & Captain</Text>
+          {/* Boat Operator Profile */}
+          <Text style={[styles.sectionTitle, isDark && styles.textLight]}>Boat Operator & Dispatch</Text>
           <Card style={styles.captainCard}>
             <View style={styles.captainRow}>
               <View style={styles.captainAvatar}>
                 <Text style={styles.avatarLetter}>
-                  {boat.owner?.name ? boat.owner.name.charAt(0) : 'R'}
+                  {boat.owner?.name ? boat.owner.name.charAt(0).toUpperCase() : 'B'}
                 </Text>
               </View>
 
               <View style={styles.captainInfo}>
                 <View style={styles.rowBetween}>
-                  <Text style={styles.captainName}>{boat.owner?.name || 'Rameshwar Majhi'}</Text>
-                  <Badge label="Verified Captain" variant="success" size="small" />
+                  <Text style={styles.captainName}>{boat.owner?.name || 'Verified Boat Operator'}</Text>
+                  {boat.owner?.isVerifiedOwner ? (
+                    <Badge label="Verified Operator" variant="success" size="small" />
+                  ) : (
+                    <Badge label="Listed Operator" variant="teal" size="small" />
+                  )}
                 </View>
-                <Text style={styles.captainExperience}>18+ Years navigating the holy Ganga</Text>
-                <Text style={styles.captainPhone}>📞 {boat.owner?.phone || '+91 98765 43210'}</Text>
+                {boat.owner?.experience ? (
+                  <Text style={styles.captainExperience}>{boat.owner.experience} Years on Waterways</Text>
+                ) : null}
+                <Text style={styles.captainPhone}>Verified Operator • JalRide Dispatch Support</Text>
               </View>
             </View>
           </Card>
@@ -196,11 +229,11 @@ export default function BoatDetailScreen({ navigation, route }) {
           </View>
         </View>
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 80 + Math.max(insets.bottom, 16) }} />
       </ScrollView>
 
       {/* Sticky Bottom Booking Bar */}
-      <View style={[styles.bottomBar, isDark && styles.bottomBarDark]}>
+      <View style={[styles.bottomBar, isDark && styles.bottomBarDark, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <View>
           <Text style={styles.bottomPricePrefix}>Fare per Person</Text>
           <Text style={styles.bottomPrice}>
@@ -423,6 +456,30 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.teal,
     fontWeight: '600',
+  },
+  charterCard: {
+    backgroundColor: '#f0f9ff',
+    borderColor: '#b9e6fe',
+    borderWidth: 1,
+    padding: spacing.m,
+    borderRadius: radii.m,
+    marginBottom: spacing.l,
+  },
+  charterTitle: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    color: colors.teal,
+  },
+  charterSub: {
+    ...typography.caption,
+    color: colors.gray600,
+    marginTop: 2,
+  },
+  charterPrice: {
+    ...typography.h3,
+    color: colors.sunDeep,
+    fontWeight: '700',
+    marginLeft: spacing.m,
   },
   policyCard: {
     backgroundColor: colors.tealMist,

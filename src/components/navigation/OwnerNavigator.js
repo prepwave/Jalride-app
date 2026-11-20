@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -21,6 +22,9 @@ const Stack = createNativeStackNavigator();
 
 function OwnerTabs() {
   const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'ios' ? Math.max(insets.bottom, 20) : Math.max(insets.bottom, 12);
+  const tabHeight = 60 + bottomPad;
 
   return (
     <Tab.Navigator
@@ -29,8 +33,8 @@ function OwnerTabs() {
         tabBarStyle: {
           backgroundColor: isDark ? '#0a1e23' : colors.white,
           borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : colors.line,
-          height: Platform.OS === 'ios' ? 88 : 68,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+          height: tabHeight,
+          paddingBottom: bottomPad,
           paddingTop: 8,
         },
         tabBarActiveTintColor: colors.teal,

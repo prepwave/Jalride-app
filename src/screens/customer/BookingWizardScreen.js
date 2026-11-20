@@ -8,12 +8,13 @@ import {
   TextInput,
   StatusBar,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
-import { MOCK_SLOTS } from '../../services/mockData';
 import Header from '../../components/common/Header';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
@@ -24,12 +25,16 @@ export default function BookingWizardScreen({ navigation, route }) {
   const { boat: initialBoat } = route.params || {};
   const { user, bookingDraft, updateBookingDraft, resetBookingDraft } = useAuth();
   const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [step, setStep] = useState(1);
   const [selectedDate, setSelectedDate] = useState(
     new Date(Date.now() + 86400000).toISOString().split('T')[0]
   );
-  const [selectedSlot, setSelectedSlot] = useState(MOCK_SLOTS[0]);
+  const [slots, setSlots] = useState([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [isWholeBoat, setIsWholeBoat] = useState(false);
   const [passengers, setPassengers] = useState(2);
   const [couponCode, setCouponCode] = useState('');
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -44,6 +49,8 @@ export default function BookingWizardScreen({ navigation, route }) {
   const [activePaymentOrder, setActivePaymentOrder] = useState(null);
   const [pendingBookingId, setPendingBookingId] = useState(null);
 
+  const boat = initialBoat || bookingDraft.boat;
+
   useEffect(() => {
     api.getCustomerWallet().then((w) => {
       if (w && typeof w.balance === 'number') {
@@ -52,7 +59,25 @@ export default function BookingWizardScreen({ navigation, route }) {
     }).catch(() => {});
   }, []);
 
-  const boat = initialBoat || bookingDraft.boat;
+  // Fetch real availability slots whenever boat or selectedDate changes
+  useEffect(() => {
+    if (boat?._id && selectedDate) {
+      setIsLoadingSlots(true);
+      api.getBoatAvailability(boat._id, selectedDate)
+        .then((res) => {
+          const list = Array.isArray(res?.slots) ? res.slots : [];
+          setSlots(list);
+          const firstBookable = list.find((s) => s.bookable && !s.isExpired && s.seatsRemaining > 0);
+          setSelectedSlot(firstBookable || (list.length > 0 ? list[0] : null));
+        })
+        .catch((err) => {
+          console.warn('[BookingWizard] Failed to fetch slots:', err.message);
+          setSlots([]);
+          setSelectedSlot(null);
+        })
+        .finally(() => setIsLoadingSlots(false));
+    }
+  }, [boat?._id, selectedDate]);
 
   // Calculate dates for the next 7 days
   const upcomingDates = Array.from({ length: 7 }, (_, i) => {
@@ -66,32 +91,45 @@ export default function BookingWizardScreen({ navigation, route }) {
     };
   });
 
-  // Dynamic Fare calculation (Authoritative backend invariant: No client convenience fee)
-  const baseFare = (boat?.price || 350) * passengers;
+  // Dynamic Fare calculation (Authoritative backend invariant)
+  const unitPrice = selectedSlot?.price || boat?.price || 350;
+  const maxAvailableSeats = selectedSlot?.seatsRemaining || boat?.capacity || 30;
+  const baseFare = isWholeBoat
+    ? (boat?.wholeBoatPrice || unitPrice * (boat?.capacity || 10))
+    : unitPrice * passengers;
   const totalAmount = Math.max(0, baseFare - couponDiscount);
 
   const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) return;
+    if (!couponCode.trim()) {
+      setCouponMessage('Please enter a coupon code.');
+      return;
+    }
     try {
       const res = await api.validateCoupon(couponCode, baseFare);
       if (res && res.valid) {
-        setCouponDiscount(res.discountAmount || 100);
-        setCouponMessage(`Coupon applied! Saved ₹${res.discountAmount || 100}`);
+        setCouponDiscount(res.discountAmount || 0);
+        setCouponMessage(res.message || `Coupon applied! Saved ₹${res.discountAmount || 0}`);
       }
     } catch (e) {
       setCouponDiscount(0);
-      setCouponMessage(e.message || 'Invalid coupon code');
+      setCouponMessage(e.message || 'Invalid or inactive coupon code');
     }
   };
 
   const handleConfirmAndPay = async () => {
+    if (!isWholeBoat && (!selectedSlot || !selectedSlot.time)) {
+      Alert.alert('Slot Required', 'Please select an available departure time slot.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
         boatId: boat?._id,
         bookingDate: selectedDate,
-        bookingTime: selectedSlot?.time || '05:45 PM',
-        passengers,
+        bookingTime: selectedSlot?.time || '09:30',
+        passengers: isWholeBoat ? (boat?.capacity || 10) : passengers,
+        charterType: isWholeBoat ? 'whole_boat' : 'shared',
         couponCode: couponDiscount > 0 ? couponCode : undefined,
         paymentMethod,
       };
@@ -106,7 +144,6 @@ export default function BookingWizardScreen({ navigation, route }) {
 
       // Handle payment flow based on selected method
       if (paymentMethod === 'cash') {
-        // Cash bookings are confirmed by owner on ghat
         setCompletedBooking(createdBooking);
         setStep(7);
         setIsSubmitting(false);
@@ -137,7 +174,7 @@ export default function BookingWizardScreen({ navigation, route }) {
         setActivePaymentOrder(orderRes);
         setShowRazorpayModal(true);
       } else {
-        throw new Error('Unable to generate payment order from Razorpay gateway.');
+        throw new Error('Unable to generate payment order from payment gateway.');
       }
     } catch (err) {
       Alert.alert('Booking Error', err.message || 'Failed to complete booking. Please try again.');
@@ -182,7 +219,13 @@ export default function BookingWizardScreen({ navigation, route }) {
         <View style={[styles.progressBarFill, { width: `${(step / 7) * 100}%` }]} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 60 + Math.max(insets.bottom, 16) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* ================= STEP 1: SELECT DATE ================= */}
         {step === 1 && (
           <View>
@@ -190,7 +233,7 @@ export default function BookingWizardScreen({ navigation, route }) {
               Choose Your Ride Date
             </Text>
             <Text style={styles.stepSub}>
-              Select the date for your boat journey on the Ganga.
+              Select your travel date for this boat journey.
             </Text>
 
             <View style={styles.dateGrid}>
@@ -240,7 +283,7 @@ export default function BookingWizardScreen({ navigation, route }) {
 
             <View style={styles.infoNoteBox}>
               <Text style={styles.infoNoteText}>
-                💡 Early morning (05:30 AM) and evening Aarti (05:45 PM) slots fill fast.
+                💡 Real-time departure slots and seat availability are synced live from the boat operator.
               </Text>
             </View>
 
@@ -252,11 +295,11 @@ export default function BookingWizardScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* ================= STEP 2: SELECT BOAT / GHAT ================= */}
+        {/* ================= STEP 2: SELECT BOAT / BOARDING POINT ================= */}
         {step === 2 && (
           <View>
             <Text style={[styles.stepHeading, isDark && styles.textLight]}>
-              Boat & Boarding Ghat
+              Boat & Boarding Point
             </Text>
             <Text style={styles.stepSub}>
               Review chosen boat details and pickup point.
@@ -264,16 +307,24 @@ export default function BookingWizardScreen({ navigation, route }) {
 
             <Card style={styles.selectedBoatCard}>
               <View style={styles.rowBetween}>
-                <Badge label={boat?.boatType || 'Bajra'} variant="teal" />
-                <Badge label={`📍 ${boat?.location || 'Assi Ghat'}`} variant="sun" />
+                <Badge label={boat?.boatType || 'Cruiser'} variant="teal" />
+                <Badge label={`📍 ${boat?.location || 'Boarding Point'}`} variant="sun" />
               </View>
               <Text style={styles.boatCardTitle}>{boat?.boatName}</Text>
-              <Text style={styles.boatCardDesc}>{boat?.description}</Text>
+              <Text style={styles.boatCardDesc}>{boat?.description || 'Water tourism ride.'}</Text>
               <View style={styles.boatCardMeta}>
                 <Text style={styles.boatCardPrice}>₹{boat?.price} <Text style={{ fontSize: 12 }}>/ seat</Text></Text>
                 <Text style={styles.boatCardCap}>Capacity: {boat?.capacity} seats</Text>
               </View>
             </Card>
+
+            {boat?.allowWholeBoatBooking && (
+              <View style={[styles.infoNoteBox, { marginTop: spacing.m }]}>
+                <Text style={styles.infoNoteText}>
+                  🛥️ Private Charter Available: You can reserve this entire boat in Step 4 for ₹{boat.wholeBoatPrice || boat.price * boat.capacity}.
+                </Text>
+              </View>
+            )}
 
             <Button
               title="Next: Select Time Slot →"
@@ -283,7 +334,7 @@ export default function BookingWizardScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* ================= STEP 3: TIME SLOT ================= */}
+        {/* ================= STEP 3: REAL TIME SLOTS ================= */}
         {step === 3 && (
           <View>
             <Text style={[styles.stepHeading, isDark && styles.textLight]}>
@@ -293,115 +344,210 @@ export default function BookingWizardScreen({ navigation, route }) {
               Available slots for {selectedDate}.
             </Text>
 
-            <View style={styles.slotList}>
-              {MOCK_SLOTS.map((slot) => {
-                const isSelected = selectedSlot?.id === slot.id;
-                return (
-                  <TouchableOpacity
-                    key={slot.id}
-                    style={[
-                      styles.slotItem,
-                      isSelected && styles.slotItemSelected,
-                      isDark && !isSelected && styles.slotItemDark,
-                    ]}
-                    onPress={() => setSelectedSlot(slot)}
-                  >
-                    <View style={styles.slotLeft}>
-                      <Text style={[styles.slotTime, isSelected && styles.slotTimeSelected]}>
-                        🕒 {slot.time}
-                      </Text>
-                      <Text style={[styles.slotLabel, isSelected && styles.slotLabelSelected]}>
-                        {slot.label}
-                      </Text>
-                    </View>
+            {isLoadingSlots ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={colors.teal} />
+                <Text style={{ marginTop: 12, color: colors.gray500 }}>
+                  Checking live departures for {selectedDate}...
+                </Text>
+              </View>
+            ) : slots.length === 0 ? (
+              <Card style={{ padding: spacing.xl, alignItems: 'center', marginVertical: spacing.l }}>
+                <Text style={{ fontSize: 32, marginBottom: 8 }}>📅</Text>
+                <Text style={[styles.boatCardTitle, { textAlign: 'center' }]}>No Departures on this Date</Text>
+                <Text style={[styles.boatCardDesc, { textAlign: 'center', marginVertical: 8 }]}>
+                  The boat operator has no departures scheduled for {selectedDate}. Please select another date.
+                </Text>
+                <Button
+                  title="← Pick Another Date"
+                  variant="outline"
+                  onPress={() => setStep(1)}
+                  style={{ marginTop: spacing.m }}
+                />
+              </Card>
+            ) : (
+              <View style={styles.slotList}>
+                {slots.map((slot, idx) => {
+                  const isSelected = selectedSlot?.time === slot.time;
+                  const isBookable = slot.bookable && !slot.isExpired && slot.seatsRemaining > 0;
+                  return (
+                    <TouchableOpacity
+                      key={slot.time || idx}
+                      disabled={!isBookable}
+                      style={[
+                        styles.slotItem,
+                        isSelected && styles.slotItemSelected,
+                        !isBookable && styles.slotItemDisabled,
+                        isDark && !isSelected && styles.slotItemDark,
+                      ]}
+                      onPress={() => setSelectedSlot(slot)}
+                    >
+                      <View style={styles.slotLeft}>
+                        <Text
+                          style={[
+                            styles.slotTime,
+                            isSelected && styles.slotTimeSelected,
+                            !isBookable && styles.textDisabled,
+                          ]}
+                        >
+                          🕒 {slot.time}
+                        </Text>
+                        <Text style={[styles.slotLabel, isSelected && styles.slotLabelSelected]}>
+                          {isBookable
+                            ? `${slot.seatsRemaining} seats available`
+                            : slot.isExpired
+                            ? 'Departed'
+                            : 'Sold Out'}
+                        </Text>
+                      </View>
 
-                    {slot.badge && (
-                      <Badge
-                        label={slot.badge}
-                        variant={slot.badge === 'Most Popular' ? 'sun' : 'warning'}
-                        size="small"
-                      />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={[styles.slotPriceText, isSelected && { color: colors.teal }]}>
+                          ₹{slot.price || boat?.price || 350}
+                        </Text>
+                        {isBookable ? (
+                          <Badge label="Available" variant="success" size="small" />
+                        ) : (
+                          <Badge
+                            label={slot.isExpired ? 'Departed' : 'Full'}
+                            variant="warning"
+                            size="small"
+                          />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
 
-            <Button
-              title="Next: Passenger Count →"
-              onPress={() => setStep(4)}
-              style={{ marginTop: spacing.xl }}
-            />
+            {slots.length > 0 && (
+              <Button
+                title={selectedSlot ? `Confirm Slot (${selectedSlot.time}) →` : "Next: Passenger Count →"}
+                disabled={!selectedSlot || !selectedSlot.bookable || selectedSlot.isExpired}
+                onPress={() => setStep(4)}
+                style={{ marginTop: spacing.xl }}
+              />
+            )}
           </View>
         )}
 
-        {/* ================= STEP 4: PASSENGERS ================= */}
+        {/* ================= STEP 4: PASSENGERS / CHARTER ================= */}
         {step === 4 && (
           <View>
             <Text style={[styles.stepHeading, isDark && styles.textLight]}>
-              How Many Passengers?
+              Passengers & Charter Option
             </Text>
             <Text style={styles.stepSub}>
-              Select headcount (seats capped by live capacity: {boat?.capacity || 35}).
+              Choose individual seats or full private vessel charter.
             </Text>
 
-            <Card style={styles.counterCard}>
-              <Text style={styles.counterLabel}>Number of Seats</Text>
-              <View style={styles.counterRow}>
+            {boat?.allowWholeBoatBooking && (
+              <View style={styles.charterToggleRow}>
                 <TouchableOpacity
-                  style={[styles.counterBtn, passengers <= 1 && styles.counterBtnDisabled]}
-                  onPress={() => setPassengers(Math.max(1, passengers - 1))}
-                  disabled={passengers <= 1}
+                  style={[styles.charterToggleBtn, !isWholeBoat && styles.charterToggleBtnActive]}
+                  onPress={() => setIsWholeBoat(false)}
                 >
-                  <Text style={styles.counterBtnText}>−</Text>
+                  <Text style={[styles.charterToggleText, !isWholeBoat && styles.charterToggleTextActive]}>
+                    Individual Seats
+                  </Text>
                 </TouchableOpacity>
 
-                <View style={styles.counterDisplay}>
-                  <Text style={styles.counterNumber}>{passengers}</Text>
-                  <Text style={styles.counterSub}>Passenger{passengers > 1 ? 's' : ''}</Text>
-                </View>
-
                 <TouchableOpacity
-                  style={[styles.counterBtn, passengers >= (boat?.capacity || 35) && styles.counterBtnDisabled]}
-                  onPress={() => setPassengers(Math.min(boat?.capacity || 35, passengers + 1))}
-                  disabled={passengers >= (boat?.capacity || 35)}
+                  style={[styles.charterToggleBtn, isWholeBoat && styles.charterToggleBtnActive]}
+                  onPress={() => setIsWholeBoat(true)}
                 >
-                  <Text style={styles.counterBtnText}>+</Text>
+                  <Text style={[styles.charterToggleText, isWholeBoat && styles.charterToggleTextActive]}>
+                    Entire Boat Charter
+                  </Text>
                 </TouchableOpacity>
               </View>
-            </Card>
+            )}
+
+            {isWholeBoat ? (
+              <Card style={styles.counterCard}>
+                <Text style={{ fontSize: 32, marginBottom: 8 }}>🛥️</Text>
+                <Text style={styles.counterLabel}>Full Boat Private Charter</Text>
+                <Text style={[styles.boatCardDesc, { textAlign: 'center' }]}>
+                  Entire vessel reserved exclusively for your party (up to {boat?.capacity || 10} passengers).
+                </Text>
+                <Text style={[styles.farePreviewAmount, { marginTop: 12 }]}>
+                  ₹{boat?.wholeBoatPrice || unitPrice * (boat?.capacity || 10)}
+                </Text>
+              </Card>
+            ) : (
+              <Card style={styles.counterCard}>
+                <Text style={styles.counterLabel}>Number of Seats</Text>
+                <View style={styles.counterRow}>
+                  <TouchableOpacity
+                    style={[styles.counterBtn, passengers <= 1 && styles.counterBtnDisabled]}
+                    onPress={() => setPassengers(Math.max(1, passengers - 1))}
+                    disabled={passengers <= 1}
+                  >
+                    <Text style={styles.counterBtnText}>−</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.counterDisplay}>
+                    <Text style={styles.counterNumber}>{passengers}</Text>
+                    <Text style={styles.counterSub}>Passenger{passengers > 1 ? 's' : ''}</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.counterBtn,
+                      passengers >= maxAvailableSeats && styles.counterBtnDisabled,
+                    ]}
+                    onPress={() => setPassengers(Math.min(maxAvailableSeats, passengers + 1))}
+                    disabled={passengers >= maxAvailableSeats}
+                  >
+                    <Text style={styles.counterBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={[styles.boatCardCap, { marginTop: 8 }]}>
+                  {maxAvailableSeats} seats currently open on this departure
+                </Text>
+              </Card>
+            )}
 
             <View style={styles.farePreviewCard}>
-              <Text style={styles.farePreviewTitle}>Subtotal for {passengers} Rider{passengers > 1 ? 's' : ''}</Text>
-              <Text style={styles.farePreviewAmount}>₹{(boat?.price || 350) * passengers}</Text>
+              <Text style={styles.farePreviewTitle}>
+                {isWholeBoat ? 'Private Charter Fare' : `Subtotal for ${passengers} Rider${passengers > 1 ? 's' : ''}`}
+              </Text>
+              <Text style={styles.farePreviewAmount}>₹{baseFare}</Text>
             </View>
 
             <Button
-              title="Next: Apply Coupons →"
+              title="Next: Apply Promo Coupon →"
               onPress={() => setStep(5)}
               style={{ marginTop: spacing.xl }}
             />
           </View>
         )}
 
-        {/* ================= STEP 5: COUPONS ================= */}
+        {/* ================= STEP 5: PROMO COUPONS ================= */}
         {step === 5 && (
           <View>
             <Text style={[styles.stepHeading, isDark && styles.textLight]}>
-              Have a Discount Coupon?
+              Discount Coupon
             </Text>
             <Text style={styles.stepSub}>
-              Apply promo codes for instant savings on your ride.
+              Enter an authorized promotional coupon if you have one.
             </Text>
 
             <Card style={styles.couponCard}>
               <View style={styles.couponInputRow}>
                 <TextInput
-                  style={styles.couponInput}
-                  placeholder="Enter code (e.g. JALRIDE100)"
+                  style={[styles.couponInput, isDark && styles.couponInputDark]}
+                  placeholder="Enter coupon code"
                   placeholderTextColor={colors.gray400}
                   value={couponCode}
-                  onChangeText={setCouponCode}
+                  onChangeText={(val) => {
+                    setCouponCode(val);
+                    if (couponDiscount > 0) {
+                      setCouponDiscount(0);
+                      setCouponMessage('');
+                    }
+                  }}
                   autoCapitalize="characters"
                 />
                 <TouchableOpacity
@@ -416,34 +562,11 @@ export default function BookingWizardScreen({ navigation, route }) {
                 <Text style={[styles.couponMsg, couponDiscount > 0 ? styles.couponSuccess : styles.couponError]}>
                   {couponMessage}
                 </Text>
-              ) : null}
-
-              {/* Quick Coupon Chips */}
-              <View style={styles.quickCoupons}>
-                <TouchableOpacity
-                  style={styles.couponChip}
-                  onPress={() => {
-                    setCouponCode('JALRIDE100');
-                    setCouponDiscount(100);
-                    setCouponMessage('Code JALRIDE100 applied: ₹100 OFF');
-                  }}
-                >
-                  <Text style={styles.couponChipCode}>JALRIDE100</Text>
-                  <Text style={styles.couponChipDesc}>Get ₹100 Flat OFF</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.couponChip}
-                  onPress={() => {
-                    setCouponCode('AARTI50');
-                    setCouponDiscount(50);
-                    setCouponMessage('Code AARTI50 applied: ₹50 OFF');
-                  }}
-                >
-                  <Text style={styles.couponChipCode}>AARTI50</Text>
-                  <Text style={styles.couponChipDesc}>Get ₹50 Aarti Discount</Text>
-                </TouchableOpacity>
-              </View>
+              ) : (
+                <Text style={[styles.couponMsg, { color: colors.gray500 }]}>
+                  Coupons are issued directly by JalRide administration.
+                </Text>
+              )}
             </Card>
 
             <Button
@@ -464,21 +587,25 @@ export default function BookingWizardScreen({ navigation, route }) {
               Choose payment method and confirm reservation.
             </Text>
 
-            {/* Fare Breakdown */}
+            {/* Honest Real Fare Breakdown */}
             <Card style={styles.fareBreakdownCard}>
               <Text style={styles.breakdownTitle}>Fare Breakdown</Text>
               <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Base Fare ({passengers} × ₹{boat?.price || 350})</Text>
+                <Text style={styles.breakdownLabel}>
+                  {isWholeBoat
+                    ? `Private Vessel Charter`
+                    : `Base Fare (${passengers} × ₹${unitPrice})`}
+                </Text>
                 <Text style={styles.breakdownVal}>₹{baseFare}</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Govt Inland Navigation Safety</Text>
-                <Text style={[styles.breakdownVal, { color: colors.success }]}>Included Free</Text>
               </View>
               {couponDiscount > 0 && (
                 <View style={styles.breakdownRow}>
-                  <Text style={[styles.breakdownLabel, { color: colors.success }]}>Coupon Discount ({couponCode})</Text>
-                  <Text style={[styles.breakdownVal, { color: colors.success }]}>−₹{couponDiscount}</Text>
+                  <Text style={[styles.breakdownLabel, { color: colors.success }]}>
+                    Coupon Discount ({couponCode})
+                  </Text>
+                  <Text style={[styles.breakdownVal, { color: colors.success }]}>
+                    −₹{couponDiscount}
+                  </Text>
                 </View>
               )}
               <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
@@ -822,6 +949,44 @@ const styles = StyleSheet.create({
     backgroundColor: colors.tealMist,
     borderColor: colors.teal,
   },
+  slotItemDisabled: {
+    opacity: 0.5,
+    backgroundColor: colors.gray100,
+  },
+  textDisabled: {
+    color: colors.gray400,
+  },
+  slotPriceText: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  charterToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.gray200,
+    borderRadius: radii.m,
+    padding: 4,
+    marginBottom: spacing.l,
+  },
+  charterToggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: radii.s,
+  },
+  charterToggleBtnActive: {
+    backgroundColor: colors.teal,
+  },
+  charterToggleText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.gray600,
+  },
+  charterToggleTextActive: {
+    color: colors.white,
+    fontWeight: '700',
+  },
   slotLeft: {
     flex: 1,
   },
@@ -917,6 +1082,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.m,
     paddingHorizontal: spacing.m,
     ...typography.bodyMedium,
+  },
+  couponInputDark: {
+    borderColor: 'rgba(255,255,255,0.2)',
+    color: '#eaf6f6',
+    backgroundColor: '#12262b',
   },
   applyCouponBtn: {
     backgroundColor: colors.teal,
