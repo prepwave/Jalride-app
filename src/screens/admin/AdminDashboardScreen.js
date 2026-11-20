@@ -23,12 +23,39 @@ export default function AdminDashboardScreen({ navigation }) {
   const { user } = useAuth();
   const { isDark } = useTheme();
   const [stats, setStats] = useState(null);
+  const [boatCount, setBoatCount] = useState(0);
+  const [userCount, setUserCount] = useState(0);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [pendingRefunds, setPendingRefunds] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     try {
-      const data = await api.getAdminStats();
-      setStats(data || {});
+      const [statsRes, boatsRes, usersRes, refundsRes] = await Promise.allSettled([
+        api.getAdminStats(),
+        api.getAdminBoats(),
+        api.getAdminUsers(),
+        api.getAdminRefundRequests(),
+      ]);
+
+      const s = statsRes.status === 'fulfilled' ? statsRes.value : {};
+      const b = boatsRes.status === 'fulfilled' && Array.isArray(boatsRes.value) ? boatsRes.value : [];
+      const u = usersRes.status === 'fulfilled' && Array.isArray(usersRes.value) ? usersRes.value : [];
+      const r = refundsRes.status === 'fulfilled' && Array.isArray(refundsRes.value) ? refundsRes.value : [];
+
+      setStats(s);
+      setBoatCount(s.totalBoats !== undefined ? s.totalBoats : b.length);
+      setUserCount(
+        (s.totalUsers !== undefined && s.totalOwners !== undefined)
+          ? (s.totalUsers + s.totalOwners)
+          : u.length
+      );
+      setPendingApprovals(
+        s.pendingApprovals !== undefined
+          ? s.pendingApprovals
+          : b.filter((boat) => boat.approvalStatus === 'pending' || boat.status === 'pending').length
+      );
+      setPendingRefunds(r.length);
     } catch (e) {
       console.warn('Error loading admin stats:', e);
     } finally {
@@ -56,7 +83,7 @@ export default function AdminDashboardScreen({ navigation }) {
           <View>
             <Text style={styles.headerRole}>👑 SUPER ADMINISTRATOR CONSOLE</Text>
             <Text style={[styles.headerName, isDark && styles.textLight]}>
-              Pushpendra Singh (Admin)
+              {user?.name || 'Pushpendra Singh'} (Admin)
             </Text>
           </View>
         </View>
@@ -84,26 +111,26 @@ export default function AdminDashboardScreen({ navigation }) {
         {/* Platform Revenue & Commission KPI Card */}
         <View style={styles.revenueCard}>
           <Text style={styles.revenueLabel}>PLATFORM GROSS BOOKING VALUE</Text>
-          <Text style={styles.revenueValue}>₹{stats?.totalRevenue?.toLocaleString('en-IN') || '2,84,500'}</Text>
+          <Text style={styles.revenueValue}>₹{(stats?.totalRevenue ?? 0).toLocaleString('en-IN')}</Text>
 
           <View style={styles.kpiRow}>
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>₹{stats?.platformCommissionRevenue?.toLocaleString('en-IN') || '38,940'}</Text>
-              <Text style={styles.kpiLbl}>Retained Commission (15%)</Text>
+              <Text style={styles.kpiVal}>₹{(stats?.platformCommissionRevenue ?? Math.round((stats?.totalRevenue ?? 0) * 0.10)).toLocaleString('en-IN')}</Text>
+              <Text style={styles.kpiLbl}>Retained Commission</Text>
             </View>
 
             <View style={styles.kpiDivider} />
 
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>₹{stats?.gstCollected?.toLocaleString('en-IN') || '7,009'}</Text>
+              <Text style={styles.kpiVal}>₹{(stats?.gstCollected ?? Math.round((stats?.platformCommissionRevenue ?? Math.round((stats?.totalRevenue ?? 0) * 0.10)) * 0.18)).toLocaleString('en-IN')}</Text>
               <Text style={styles.kpiLbl}>GST Pool Collected</Text>
             </View>
 
             <View style={styles.kpiDivider} />
 
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>{stats?.todayBookings || '38'}</Text>
-              <Text style={styles.kpiLbl}>Today's Rides</Text>
+              <Text style={styles.kpiVal}>{stats?.todayBookings ?? stats?.totalBookings ?? 0}</Text>
+              <Text style={styles.kpiLbl}>Total Rides</Text>
             </View>
           </View>
         </View>
@@ -117,7 +144,7 @@ export default function AdminDashboardScreen({ navigation }) {
           >
             <View style={styles.rowBetween}>
               <Text style={styles.attentionIcon}>🛶</Text>
-              <Badge label={`${stats?.pendingBoatApprovals || 5} Pending`} variant="warning" size="small" />
+              <Badge label={`${pendingApprovals} Pending`} variant={pendingApprovals > 0 ? "warning" : "success"} size="small" />
             </View>
             <Text style={styles.attentionTitle}>Pending Boat Approvals</Text>
             <Text style={styles.attentionSub}>Vessels awaiting port inspection</Text>
@@ -125,11 +152,11 @@ export default function AdminDashboardScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.attentionCard}
-            onPress={() => Alert.alert('Refunds Queue', 'Reviewing 2 customer refund requests for cancellations.')}
+            onPress={() => Alert.alert('Refunds Queue', `${pendingRefunds} customer refund requests pending review.`)}
           >
             <View style={styles.rowBetween}>
               <Text style={styles.attentionIcon}>🔄</Text>
-              <Badge label={`${stats?.pendingRefunds || 2} Requests`} variant="danger" size="small" />
+              <Badge label={`${pendingRefunds} Requests`} variant={pendingRefunds > 0 ? "danger" : "secondary"} size="small" />
             </View>
             <Text style={styles.attentionTitle}>Refund Authorizations</Text>
             <Text style={styles.attentionSub}>100% wallet escrow reversals</Text>
@@ -137,11 +164,11 @@ export default function AdminDashboardScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.attentionCard}
-            onPress={() => Alert.alert('KYC Audit Queue', 'Reviewing operator identity and captain certificates.')}
+            onPress={() => Alert.alert('KYC Audit Queue', 'All pending operator and captain KYC records are up to date.')}
           >
             <View style={styles.rowBetween}>
               <Text style={styles.attentionIcon}>🪪</Text>
-              <Badge label={`${stats?.pendingKyc || 3} Pending`} variant="info" size="small" />
+              <Badge label="Active" variant="info" size="small" />
             </View>
             <Text style={styles.attentionTitle}>KYC Review Queue</Text>
             <Text style={styles.attentionSub}>Aadhaar & Captain License audit</Text>
@@ -156,7 +183,7 @@ export default function AdminDashboardScreen({ navigation }) {
               <Badge label="Active" variant="success" size="small" />
             </View>
             <Text style={styles.attentionTitle}>Rates & Commission</Text>
-            <Text style={styles.attentionSub}>Global 15% rate & GST rules</Text>
+            <Text style={styles.attentionSub}>Cash & Online split rules</Text>
           </TouchableOpacity>
         </View>
 
@@ -169,8 +196,8 @@ export default function AdminDashboardScreen({ navigation }) {
           >
             <Text style={styles.menuItemIcon}>🚢</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.menuItemTitle, isDark && styles.textLight]}>Fleet Fleet Oversight (42 Boats)</Text>
-              <Text style={styles.menuItemSub}>Approve, reject, or suspend Varanasi vessels</Text>
+              <Text style={[styles.menuItemTitle, isDark && styles.textLight]}>Fleet Oversight ({boatCount} Boats)</Text>
+              <Text style={styles.menuItemSub}>Approve, reject, or manage registered vessels</Text>
             </View>
             <Text style={styles.menuArrow}>→</Text>
           </TouchableOpacity>
@@ -183,7 +210,7 @@ export default function AdminDashboardScreen({ navigation }) {
           >
             <Text style={styles.menuItemIcon}>👥</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.menuItemTitle, isDark && styles.textLight]}>User Directory (1,450 Riders)</Text>
+              <Text style={[styles.menuItemTitle, isDark && styles.textLight]}>User Directory ({userCount} Accounts)</Text>
               <Text style={styles.menuItemSub}>Inspect accounts, verify emails & toggle active</Text>
             </View>
             <Text style={styles.menuArrow}>→</Text>

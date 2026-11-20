@@ -70,7 +70,7 @@ export default function OwnerDashboardScreen({ navigation }) {
           <View>
             <Text style={styles.topBarRole}>⚓ BOAT OWNER CONSOLE</Text>
             <Text style={[styles.topBarName, isDark && styles.textLight]}>
-              {user?.name || 'Rameshwar Majhi'}
+              {user?.name || 'Boat Operator'}
             </Text>
           </View>
         </View>
@@ -98,25 +98,25 @@ export default function OwnerDashboardScreen({ navigation }) {
         {/* Earnings KPI Banner */}
         <View style={styles.earningsBanner}>
           <Text style={styles.earningsLabel}>TOTAL NET EARNINGS</Text>
-          <Text style={styles.earningsValue}>₹{stats?.totalEarnings?.toLocaleString('en-IN') || '48,650'}</Text>
+          <Text style={styles.earningsValue}>₹{(stats?.totalEarnings ?? 0).toLocaleString('en-IN')}</Text>
 
           <View style={styles.kpiRow}>
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>₹{stats?.availableBalance?.toLocaleString('en-IN') || '12,400'}</Text>
+              <Text style={styles.kpiVal}>₹{(stats?.availableBalance ?? 0).toLocaleString('en-IN')}</Text>
               <Text style={styles.kpiLbl}>Available to Payout</Text>
             </View>
 
             <View style={styles.kpiDivider} />
 
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>₹{stats?.dueCommissions || '680'}</Text>
+              <Text style={styles.kpiVal}>₹{stats?.dueCommissions ?? 0}</Text>
               <Text style={styles.kpiLbl}>Due Commission (Cash)</Text>
             </View>
 
             <View style={styles.kpiDivider} />
 
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>{stats?.todayTrips || '4'}</Text>
+              <Text style={styles.kpiVal}>{stats?.todayTrips ?? 0}</Text>
               <Text style={styles.kpiLbl}>Today's Trips</Text>
             </View>
           </View>
@@ -124,7 +124,7 @@ export default function OwnerDashboardScreen({ navigation }) {
 
         {/* Quick Dispatch Action Grid */}
         <Text style={[styles.sectionTitle, isDark && styles.textLight]}>
-          Quick Ghat Dispatch
+          Quick Fleet Dispatch
         </Text>
 
         <View style={styles.quickGrid}>
@@ -134,7 +134,12 @@ export default function OwnerDashboardScreen({ navigation }) {
           >
             <Text style={styles.quickIcon}>📋</Text>
             <Text style={styles.quickText}>Incoming Rides</Text>
-            <Badge label="2 Pending" variant="warning" size="small" style={{ marginTop: 4 }} />
+            <Badge
+              label={`${bookings.filter((b) => b.status === 'pending').length} Pending`}
+              variant="warning"
+              size="small"
+              style={{ marginTop: 4 }}
+            />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -143,7 +148,12 @@ export default function OwnerDashboardScreen({ navigation }) {
           >
             <Text style={styles.quickIcon}>🛶</Text>
             <Text style={styles.quickText}>My Fleet</Text>
-            <Badge label="3 Active" variant="teal" size="small" style={{ marginTop: 4 }} />
+            <Badge
+              label={`${stats?.activeBoats ?? 0} Active`}
+              variant="teal"
+              size="small"
+              style={{ marginTop: 4 }}
+            />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -175,54 +185,72 @@ export default function OwnerDashboardScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {bookings.map((booking) => (
-          <Card key={booking._id} style={styles.bookingCard}>
-            <View style={styles.bookingHeader}>
-              <View>
-                <Text style={styles.bookingId}>{booking.ticketId}</Text>
-                <Text style={[styles.bookingCustomer, isDark && styles.textLight]}>
-                  {booking.customerName} ({booking.customerPhone})
-                </Text>
-              </View>
-              <Badge label={booking.status} variant="success" />
-            </View>
-
-            <View style={styles.bookingDetailsRow}>
-              <Text style={styles.bookingDetail}>📍 {booking.boat?.location}</Text>
-              <Text style={styles.bookingDetail}>🕒 {booking.bookingTime}</Text>
-              <Text style={styles.bookingDetail}>👥 {booking.passengers} Seats</Text>
-            </View>
-
-            <View style={styles.bookingFareRow}>
-              <Text style={styles.earningLabel}>Owner Net Earnings:</Text>
-              <Text style={styles.earningValue}>₹{booking.totalAmount - Math.round(booking.totalAmount * 0.15)}</Text>
-            </View>
-
-            {/* Action Buttons for Booking */}
-            <View style={styles.dispatchActions}>
-              <TouchableOpacity
-                style={styles.confirmBtn}
-                onPress={() => handleQuickAction('Confirmed & Slot Reserved', booking._id)}
-              >
-                <Text style={styles.confirmBtnText}>✓ Confirm Booking</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.holdBtn}
-                onPress={() => handleQuickAction('Put on Hold', booking._id)}
-              >
-                <Text style={styles.holdBtnText}>⏸ Hold</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => handleQuickAction('Cancelled & 100% Refunded', booking._id)}
-              >
-                <Text style={styles.cancelBtnText}>✕ Cancel</Text>
-              </TouchableOpacity>
-            </View>
+        {bookings.length === 0 ? (
+          <Card style={{ padding: 28, alignItems: 'center', marginVertical: spacing.s }}>
+            <Text style={{ fontSize: 32, marginBottom: 8 }}>📋</Text>
+            <Text style={{ ...typography.bodyMedium, color: colors.gray500, textAlign: 'center' }}>
+              No trips scheduled for today yet.
+            </Text>
           </Card>
-        ))}
+        ) : (
+          bookings.map((booking) => {
+            const isCash = booking.paymentMethod === 'cash';
+            const commRate = isCash
+              ? (booking.boat?.cashCommissionRate ?? 12)
+              : (booking.boat?.onlineCommissionRate ?? 10);
+            const commAmt = Math.round((booking.totalAmount * commRate) / 100);
+            const netEarnings = booking.totalAmount - commAmt;
+
+            return (
+              <Card key={booking._id} style={styles.bookingCard}>
+                <View style={styles.bookingHeader}>
+                  <View>
+                    <Text style={styles.bookingId}>{booking.ticketId}</Text>
+                    <Text style={[styles.bookingCustomer, isDark && styles.textLight]}>
+                      {booking.customerName} ({booking.customerPhone})
+                    </Text>
+                  </View>
+                  <Badge label={booking.status} variant="success" />
+                </View>
+
+                <View style={styles.bookingDetailsRow}>
+                  <Text style={styles.bookingDetail}>📍 {booking.boat?.location}</Text>
+                  <Text style={styles.bookingDetail}>🕒 {booking.bookingTime}</Text>
+                  <Text style={styles.bookingDetail}>👥 {booking.passengers} Seats</Text>
+                </View>
+
+                <View style={styles.bookingFareRow}>
+                  <Text style={styles.earningLabel}>Owner Net Earnings ({100 - commRate}%):</Text>
+                  <Text style={styles.earningValue}>₹{netEarnings}</Text>
+                </View>
+
+                {/* Action Buttons for Booking */}
+                <View style={styles.dispatchActions}>
+                  <TouchableOpacity
+                    style={styles.confirmBtn}
+                    onPress={() => handleQuickAction('Confirmed & Slot Reserved', booking._id)}
+                  >
+                    <Text style={styles.confirmBtnText}>✓ Confirm Booking</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.holdBtn}
+                    onPress={() => handleQuickAction('Put on Hold', booking._id)}
+                  >
+                    <Text style={styles.holdBtnText}>⏸ Hold</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => handleQuickAction('Cancelled & 100% Refunded', booking._id)}
+                  >
+                    <Text style={styles.cancelBtnText}>✕ Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </Card>
+            );
+          })
+        )}
 
         {/* Ghat Standee Callout */}
         <View style={styles.standeeBanner}>

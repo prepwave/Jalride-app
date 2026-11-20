@@ -23,22 +23,22 @@ export default function OwnerQrPostersScreen({ navigation }) {
   const [boats, setBoats] = useState([]);
   const [selectedBoatIndex, setSelectedBoatIndex] = useState(0);
 
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     api.getOwnerBoats().then((b) => {
       if (b && b.length > 0) setBoats(b);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  const activeBoat = boats[selectedBoatIndex] || {
-    _id: 'boat-001',
-    boatName: 'Maa Ganga Express Bajra',
-    location: 'Assi Ghat',
-    price: 350,
-  };
+  const activeBoat = boats[selectedBoatIndex] || null;
 
-  const standeeUrl = `https://jalride.com/qr-book?boatId=${activeBoat._id}&ghat=${encodeURIComponent(activeBoat.location || 'Assi Ghat')}`;
+  const standeeUrl = activeBoat
+    ? `https://jalride.com/qr-book?boatId=${activeBoat._id}&ghat=${encodeURIComponent(activeBoat.location || 'Assi Ghat')}`
+    : '';
 
   const handleSharePoster = async () => {
+    if (!activeBoat) return;
     try {
       await Share.share({
         message: `🪧 JalRide Ghat Standee: Scan QR at ${activeBoat.location} to book ${activeBoat.boatName} instantly with Cash or UPI!\n${standeeUrl}`,
@@ -56,48 +56,66 @@ export default function OwnerQrPostersScreen({ navigation }) {
         subtitle="Print-ready QR standees for walk-in tourists"
         onBack={() => navigation.goBack()}
         rightAction={
-          <TouchableOpacity onPress={handleSharePoster}>
-            <Text style={styles.shareText}>Share ↗</Text>
-          </TouchableOpacity>
+          activeBoat ? (
+            <TouchableOpacity onPress={handleSharePoster}>
+              <Text style={styles.shareText}>Share ↗</Text>
+            </TouchableOpacity>
+          ) : null
         }
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Printable Standee Preview Card */}
-        <Card style={styles.standeeCard}>
-          <View style={styles.standeeHeader}>
-            <Text style={styles.standeeBrand}>JALRIDE</Text>
-            <Text style={styles.standeeTag}>⚡ SCAN & BOARD IN 30 SECONDS</Text>
-          </View>
-
-          <View style={styles.standeeBody}>
-            <Text style={styles.standeeBoatName}>{activeBoat.boatName}</Text>
-            <Text style={styles.standeeGhat}>📍 Stationed at {activeBoat.location}</Text>
-
-            {/* High Contrast Standee QR Graphic */}
-            <View style={styles.qrContainer}>
-              <View style={styles.qrFrame}>
-                <QRCode
-                  value={standeeUrl}
-                  size={190}
-                  color={colors.ink}
-                  backgroundColor="#ffffff"
-                />
+        {!activeBoat ? (
+          <Card style={{ padding: 40, alignItems: 'center' }}>
+            <Text style={{ fontSize: 40, marginBottom: 12 }}>🛶</Text>
+            <Text style={{ ...typography.bodyLarge, fontWeight: '700', color: colors.ink, textAlign: 'center', marginBottom: 6 }}>
+              No Vessels in Fleet
+            </Text>
+            <Text style={{ ...typography.body, color: colors.gray500, textAlign: 'center', marginBottom: spacing.l }}>
+              Register a boat in 'My Fleet' to generate your customized QR standee poster for ghat boarding.
+            </Text>
+            <Button
+              title="+ Add Your First Boat"
+              onPress={() => navigation.navigate('AddEditBoat')}
+            />
+          </Card>
+        ) : (
+          <>
+            {/* Printable Standee Preview Card */}
+            <Card style={styles.standeeCard}>
+              <View style={styles.standeeHeader}>
+                <Text style={styles.standeeBrand}>JALRIDE</Text>
+                <Text style={styles.standeeTag}>⚡ SCAN & BOARD IN 30 SECONDS</Text>
               </View>
-              <Text style={styles.qrSubText}>STAND-{activeBoat._id?.substring(0, 8)?.toUpperCase() || 'GHAT-PASS'}</Text>
-            </View>
 
-            <View style={styles.rateBadge}>
-              <Text style={styles.rateText}>Govt. Approved Rate: ₹{activeBoat.price} / seat</Text>
-            </View>
+              <View style={styles.standeeBody}>
+                <Text style={styles.standeeBoatName}>{activeBoat.boatName}</Text>
+                <Text style={styles.standeeGhat}>📍 Stationed at {activeBoat.location}</Text>
 
-            <View style={styles.standeePerks}>
-              <Text style={styles.perkItem}>✓ 100% Free Safety Life Jackets</Text>
-              <Text style={styles.perkItem}>✓ Evening Ganga Aarti View Seats</Text>
-              <Text style={styles.perkItem}>✓ Cash on Ghat or UPI Accepted</Text>
-            </View>
-          </View>
-        </Card>
+                {/* High Contrast Standee QR Graphic */}
+                <View style={styles.qrContainer}>
+                  <View style={styles.qrFrame}>
+                    <QRCode
+                      value={standeeUrl}
+                      size={190}
+                      color={colors.ink}
+                      backgroundColor="#ffffff"
+                    />
+                  </View>
+                  <Text style={styles.qrSubText}>STAND-{activeBoat._id?.substring(0, 8)?.toUpperCase() || 'GHAT-PASS'}</Text>
+                </View>
+
+                <View style={styles.rateBadge}>
+                  <Text style={styles.rateText}>Verified Fare: ₹{activeBoat.price} / seat</Text>
+                </View>
+
+                <View style={styles.standeePerks}>
+                  <Text style={styles.perkItem}>✓ Verified Safety Life Jackets</Text>
+                  <Text style={styles.perkItem}>✓ Scenic River & Aarti View Seats</Text>
+                  <Text style={styles.perkItem}>✓ Cash on Ghat or UPI Accepted</Text>
+                </View>
+              </View>
+            </Card>
 
         {/* Action Buttons */}
         <View style={styles.actionStack}>
@@ -122,6 +140,8 @@ export default function OwnerQrPostersScreen({ navigation }) {
             variant="outline"
           />
         </View>
+        </>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>

@@ -1,13 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  MOCK_BOATS,
-  MOCK_GHATS,
-  MOCK_SLOTS,
-  MOCK_BOOKINGS,
-  MOCK_WALLET,
-  MOCK_OWNER_STATS,
-  MOCK_ADMIN_STATS,
-} from './mockData';
+import { MOCK_GHATS } from './mockData';
 
 const BASE_URL = 'https://jalride-backend.onrender.com/api';
 
@@ -162,28 +154,8 @@ class ApiService {
   }
 
   // Resilient fallback logic when backend is waking up or offline
+  // Re-throw network and API errors to preserve authoritative live backend data integrity
   handleFallback(path, options, originalError) {
-    if (path.includes('/boats') && options.method === 'GET') {
-      return { success: true, boats: MOCK_BOATS };
-    }
-    if (path.includes('/customer/dashboard')) {
-      return { success: true, bookings: MOCK_BOOKINGS, wallet: MOCK_WALLET };
-    }
-    if (path.includes('/bookings/mine')) {
-      return { success: true, bookings: MOCK_BOOKINGS };
-    }
-    if (path.includes('/customer/wallet')) {
-      return { success: true, wallet: MOCK_WALLET };
-    }
-    if (path.includes('/owner/dashboard')) {
-      return { success: true, stats: MOCK_OWNER_STATS, bookings: MOCK_BOOKINGS };
-    }
-    if (path.includes('/admin/stats')) {
-      return { success: true, stats: MOCK_ADMIN_STATS };
-    }
-    if (path.includes('/coupons/validate')) {
-      return { success: true, valid: true, discountAmount: 100, message: 'JALRIDE100 applied successfully!' };
-    }
     throw originalError;
   }
 
@@ -298,30 +270,22 @@ class ApiService {
     const q = params.toString();
     try {
       const res = await this.request(`/boats${q ? '?' + q : ''}`);
-      const rawBoats = res.boats || res.data || MOCK_BOATS;
+      const rawBoats = res.boats || res.data;
       return Array.isArray(rawBoats) ? rawBoats.map(normalizeBoat) : [];
     } catch (e) {
-      let filtered = [...MOCK_BOATS].map(normalizeBoat);
-      if (filters.location && filters.location !== 'All Ghats') {
-        filtered = filtered.filter(b => b.location === filters.location);
-      }
-      if (filters.boatType && filters.boatType !== 'all') {
-        filtered = filtered.filter(b => b.boatType.toLowerCase().includes(filters.boatType.toLowerCase()));
-      }
-      if (filters.search) {
-        const query = filters.search.toLowerCase();
-        filtered = filtered.filter(b => b.boatName.toLowerCase().includes(query) || b.location.toLowerCase().includes(query));
-      }
-      return filtered;
+      console.warn('[JalAPI] Error fetching live boats:', e.message);
+      return [];
     }
   }
 
   async getBoatById(id) {
     try {
       const res = await this.request(`/boats/${id}`);
-      return normalizeBoat(res.boat || res.data);
+      const raw = res.boat || res.data;
+      return raw ? normalizeBoat(raw) : null;
     } catch (e) {
-      return normalizeBoat(MOCK_BOATS.find(b => b._id === id) || MOCK_BOATS[0]);
+      console.warn(`[JalAPI] Error fetching boat ${id}:`, e.message);
+      return null;
     }
   }
 
@@ -383,18 +347,20 @@ class ApiService {
   async getMyBookings() {
     try {
       const res = await this.request('/bookings/mine');
-      return res.bookings || res.data || MOCK_BOOKINGS;
+      return res.bookings || res.data || [];
     } catch (e) {
-      return MOCK_BOOKINGS;
+      console.warn('[JalAPI] Error fetching bookings:', e.message);
+      return [];
     }
   }
 
   async getBookingById(id) {
     try {
       const res = await this.request(`/bookings/${id}`);
-      return res.booking || res.data;
+      return res.booking || res.data || null;
     } catch (e) {
-      return MOCK_BOOKINGS.find(b => b._id === id) || MOCK_BOOKINGS[0];
+      console.warn(`[JalAPI] Error fetching booking ${id}:`, e.message);
+      return null;
     }
   }
 
@@ -447,45 +413,15 @@ class ApiService {
   // Instant Ghat QR Booking (qr-book.html)
   // ==========================================
   async getLiveBoatStatusForQr(boatId) {
-    try {
-      return await this.request(`/qr/${boatId}/status`);
-    } catch (e) {
-      const boat = MOCK_BOATS.find(b => b._id === boatId) || MOCK_BOATS[0];
-      return {
-        success: true,
-        boat,
-        isAvailable: true,
-        currentGhat: boat.location,
-        seatsRemaining: 18,
-      };
-    }
+    return this.request(`/qr/${boatId}/status`);
   }
 
   async bookInstantQr(boatId, payload) {
-    try {
-      return await this.request(`/qr/${boatId}/book`, {
-        method: 'POST',
-        body: payload,
-      });
-    } catch (e) {
-      return {
-        success: true,
-        booking: {
-          _id: `JAL-QR-${Math.floor(1000 + Math.random() * 9000)}`,
-          ticketId: `JAL-TK-${Math.floor(1000 + Math.random() * 9000)}`,
-          boat: MOCK_BOATS.find(b => b._id === boatId) || MOCK_BOATS[0],
-          bookingDate: new Date().toISOString().split('T')[0],
-          bookingTime: 'Instant Walk-in',
-          passengers: payload.passengers || 2,
-          totalAmount: payload.totalAmount || 500,
-          paymentMethod: payload.paymentMethod || 'cash',
-          paymentStatus: payload.paymentMethod === 'cash' ? 'cash_due' : 'paid',
-          status: 'confirmed',
-          qrCode: `JALRIDE:WALKIN:${boatId}:${Date.now()}`,
-          customerName: payload.name || 'Walk-in Tourist',
-        },
-      };
-    }
+    return this.request(`/qr/${boatId}/book`, {
+      method: 'POST',
+      body: payload,
+    });
+  }
   }
 
   async verifyTicketQr(qrData) {
@@ -536,18 +472,18 @@ class ApiService {
   async getCustomerWallet() {
     try {
       const res = await this.request('/customer/wallet');
-      return res.wallet || res.data || MOCK_WALLET;
+      return res.wallet || res.data || { balance: 0, cashbackEarned: 0, loyaltyPoints: 0, transactions: [] };
     } catch (e) {
-      return MOCK_WALLET;
+      return { balance: 0, cashbackEarned: 0, loyaltyPoints: 0, transactions: [] };
     }
   }
 
   async getCustomerWalletTransactions(page = 1) {
     try {
       const res = await this.request(`/customer/wallet/transactions?page=${page}`);
-      return res.transactions || MOCK_WALLET.transactions;
+      return res.transactions || res.data || [];
     } catch (e) {
-      return MOCK_WALLET.transactions;
+      return [];
     }
   }
 
@@ -587,8 +523,47 @@ class ApiService {
     try {
       return await this.request('/customer/loyalty');
     } catch (e) {
-      return { points: 340, valueInINR: 34, tier: 'Silver Explorer' };
+      return { points: 0, valueInINR: 0, tier: 'Member' };
     }
+  }
+
+  // ==========================================
+  // Notifications APIs
+  // ==========================================
+  async getNotifications() {
+    try {
+      const res = await this.request('/notifications');
+      return res.notifications || res.data || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async markAllNotificationsRead() {
+    try {
+      return await this.request('/notifications/read-all', { method: 'PUT' });
+    } catch (e) {
+      return { success: false };
+    }
+  }
+
+  // ==========================================
+  // Live Chat APIs
+  // ==========================================
+  async getChatConversation(bookingId) {
+    return this.request(`/chat/conversations/booking/${bookingId}`, { method: 'POST' });
+  }
+
+  async getChatMessages(conversationId) {
+    const res = await this.request(`/chat/conversations/${conversationId}/messages`);
+    return res.messages || res.data || [];
+  }
+
+  async sendChatMessage(conversationId, text) {
+    return this.request(`/chat/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: { message: text },
+    });
   }
 
   // ==========================================
@@ -597,19 +572,37 @@ class ApiService {
   async getOwnerDashboard() {
     try {
       const res = await this.request('/owner/dashboard');
-      return res.stats || res.data || MOCK_OWNER_STATS;
+      return res.stats || res.data || {
+        totalEarnings: 0,
+        availableBalance: 0,
+        pendingWithdrawals: 0,
+        todayTrips: 0,
+        totalBookings: 0,
+        activeBoats: 0,
+        dueCommissions: 0,
+        rating: 5.0,
+      };
     } catch (e) {
-      return MOCK_OWNER_STATS;
+      return {
+        totalEarnings: 0,
+        availableBalance: 0,
+        pendingWithdrawals: 0,
+        todayTrips: 0,
+        totalBookings: 0,
+        activeBoats: 0,
+        dueCommissions: 0,
+        rating: 5.0,
+      };
     }
   }
 
   async getOwnerBoats() {
     try {
       const res = await this.request('/owner/boats');
-      const raw = res.boats || res.data || MOCK_BOATS.slice(0, 2);
+      const raw = res.boats || res.data || [];
       return Array.isArray(raw) ? raw.map(normalizeBoat) : [];
     } catch (e) {
-      return MOCK_BOATS.slice(0, 2).map(normalizeBoat);
+      return [];
     }
   }
 
@@ -636,9 +629,9 @@ class ApiService {
   async getOwnerBookings() {
     try {
       const res = await this.request('/owner/bookings');
-      return res.bookings || res.data || MOCK_BOOKINGS;
+      return res.bookings || res.data || [];
     } catch (e) {
-      return MOCK_BOOKINGS;
+      return [];
     }
   }
 
@@ -671,9 +664,10 @@ class ApiService {
 
   async getOwnerWallet() {
     try {
-      return await this.request('/owner/wallet');
+      const res = await this.request('/owner/wallet');
+      return res || { availableBalance: 0, dueCommissions: 0, pendingWithdrawals: 0 };
     } catch (e) {
-      return { availableBalance: 12400, dueCommissions: 680, pendingWithdrawals: 5000 };
+      return { availableBalance: 0, dueCommissions: 0, pendingWithdrawals: 0 };
     }
   }
 
@@ -719,18 +713,32 @@ class ApiService {
   async getAdminStats() {
     try {
       const res = await this.request('/admin/stats');
-      return res.stats || res.data || MOCK_ADMIN_STATS;
+      return res.stats || res.data || {
+        totalRevenue: 0,
+        platformCommissionRevenue: 0,
+        gstCollected: 0,
+        todayBookings: 0,
+        activeBoats: 0,
+        totalUsers: 0,
+      };
     } catch (e) {
-      return MOCK_ADMIN_STATS;
+      return {
+        totalRevenue: 0,
+        platformCommissionRevenue: 0,
+        gstCollected: 0,
+        todayBookings: 0,
+        activeBoats: 0,
+        totalUsers: 0,
+      };
     }
   }
 
   async getAdminBoats() {
     try {
       const res = await this.request('/admin/boats');
-      return res.boats || res.data || MOCK_BOATS;
+      return res.boats || res.data || [];
     } catch (e) {
-      return MOCK_BOATS;
+      return [];
     }
   }
 
@@ -745,13 +753,9 @@ class ApiService {
   async getAdminUsers() {
     try {
       const res = await this.request('/admin/users');
-      return res.users || res.data;
+      return res.users || res.data || [];
     } catch (e) {
-      return [
-        { _id: 'u1', name: 'Aman Sharma', email: 'aman@example.com', role: 'customer', isActive: true },
-        { _id: 'u2', name: 'Rameshwar Majhi', email: 'rameshwar@example.com', role: 'owner', isActive: true },
-        { _id: 'u3', name: 'Pushpendra Singh', email: 'prepwave.pushpendra@gmail.com', role: 'admin', isActive: true },
-      ];
+      return [];
     }
   }
 
@@ -765,7 +769,7 @@ class ApiService {
 
   async getAdminRefundRequests() {
     try {
-      return await this.request('/admin/refunds');
+      return await this.request('/admin/refunds') || [];
     } catch (e) {
       return [];
     }
@@ -778,12 +782,9 @@ class ApiService {
   async getAdminCoupons() {
     try {
       const res = await this.request('/admin/coupons');
-      return res.coupons || res.data;
+      return res.coupons || res.data || [];
     } catch (e) {
-      return [
-        { _id: 'c1', code: 'JALRIDE100', discountAmount: 100, isActive: true },
-        { _id: 'c2', code: 'AARTI50', discountAmount: 50, isActive: true },
-      ];
+      return [];
     }
   }
 
@@ -799,10 +800,12 @@ class ApiService {
       return await this.request('/admin/settings');
     } catch (e) {
       return {
-        platformCommissionRate: 15,
+        defaultCommissionRate: 15,
+        onlineCommissionRate: 10,
+        cashCommissionRate: 12,
         commissionGstRate: 18,
         cashbackPercent: 10,
-        settlementHoldDays: 3,
+        payoutHoldDays: 3,
       };
     }
   }

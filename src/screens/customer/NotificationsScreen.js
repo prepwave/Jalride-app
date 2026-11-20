@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,54 +6,47 @@ import {
   FlatList,
   TouchableOpacity,
   StatusBar,
+  RefreshControl,
 } from 'react-native';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
+import api from '../../services/api';
 import Header from '../../components/common/Header';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 
-const MOCK_NOTIFICATIONS = [
-  {
-    id: 'n1',
-    title: 'Ride Confirmed for Subah-e-Banaras 🌅',
-    message: 'Your booking for Maa Ganga Express Bajra tomorrow at 05:30 AM is confirmed. Captain Rameshwar is preparing the vessel.',
-    time: '15 mins ago',
-    type: 'booking',
-    unread: true,
-  },
-  {
-    id: 'n2',
-    title: 'Cashback Credited: ₹100 🎁',
-    message: 'Promotional ₹100 cashback has been credited to your JalRide wallet balance.',
-    time: '2 hours ago',
-    type: 'wallet',
-    unread: true,
-  },
-  {
-    id: 'n3',
-    title: 'Ganga Water Level Normal 🌊',
-    message: 'District Ganga Navigation Authority reports calm river currents. All 84 ghats open for boat tours.',
-    time: '1 day ago',
-    type: 'weather',
-    unread: false,
-  },
-  {
-    id: 'n4',
-    title: 'Dev Deepawali Special Slots Open ✨',
-    message: 'Advance bookings for grand Ganga Aarti illumination bajras now live with early bird discounts.',
-    time: '2 days ago',
-    type: 'promo',
-    unread: false,
-  },
-];
-
 export default function NotificationsScreen({ navigation }) {
   const { isDark } = useTheme();
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+  const loadNotifications = async () => {
+    try {
+      const data = await api.getNotifications();
+      setNotifications(data || []);
+    } catch (e) {
+      console.warn('Error fetching notifications:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadNotifications();
+  };
+
+  const markAllRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false, read: true })));
+    try {
+      await api.markAllNotificationsRead();
+    } catch (_) {}
   };
 
   return (
@@ -62,43 +55,69 @@ export default function NotificationsScreen({ navigation }) {
 
       <Header
         title="Notifications"
-        subtitle="Live alerts & pilgrimage announcements"
+        subtitle="Live alerts & ride updates"
         onBack={() => navigation.goBack()}
         rightAction={
-          <TouchableOpacity onPress={markAllRead}>
-            <Text style={styles.markReadText}>Mark all read</Text>
-          </TouchableOpacity>
+          notifications.length > 0 ? (
+            <TouchableOpacity onPress={markAllRead}>
+              <Text style={styles.markReadText}>Mark all read</Text>
+            </TouchableOpacity>
+          ) : null
         }
       />
 
       <FlatList
         data={notifications}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => item._id || item.id || String(index)}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <Card style={[styles.notifCard, item.unread && styles.notifCardUnread]}>
-            <View style={styles.notifRow}>
-              <View style={styles.iconBox}>
-                <Text style={styles.iconEmoji}>
-                  {item.type === 'booking' ? '🛶' : item.type === 'wallet' ? '👛' : item.type === 'weather' ? '🌊' : '✨'}
-                </Text>
-              </View>
-
-              <View style={styles.notifContent}>
-                <View style={styles.notifHeaderRow}>
-                  <Text style={[styles.notifTitle, isDark && styles.textLight]} numberOfLines={1}>
-                    {item.title}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.teal]}
+            tintColor={colors.teal}
+          />
+        }
+        renderItem={({ item }) => {
+          const isUnread = item.unread ?? !item.read;
+          return (
+            <Card style={[styles.notifCard, isUnread && styles.notifCardUnread]}>
+              <View style={styles.notifRow}>
+                <View style={styles.iconBox}>
+                  <Text style={styles.iconEmoji}>
+                    {item.type === 'booking' ? '🛶' : item.type === 'wallet' ? '👛' : item.type === 'weather' ? '🌊' : '✨'}
                   </Text>
-                  {item.unread && <View style={styles.unreadDot} />}
                 </View>
 
-                <Text style={styles.notifMessage}>{item.message}</Text>
-                <Text style={styles.notifTime}>{item.time}</Text>
+                <View style={styles.notifContent}>
+                  <View style={styles.notifHeaderRow}>
+                    <Text style={[styles.notifTitle, isDark && styles.textLight]} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    {isUnread && <View style={styles.unreadDot} />}
+                  </View>
+
+                  <Text style={styles.notifMessage}>{item.message || item.body}</Text>
+                  <Text style={styles.notifTime}>{item.time || (item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recent')}</Text>
+                </View>
               </View>
+            </Card>
+          );
+        }}
+        ListEmptyComponent={
+          !loading ? (
+            <View style={{ padding: 48, alignItems: 'center' }}>
+              <Text style={{ fontSize: 36, marginBottom: 8 }}>🔔</Text>
+              <Text style={{ ...typography.bodyMedium, color: colors.gray500, textAlign: 'center' }}>
+                No notifications right now.
+              </Text>
+              <Text style={{ ...typography.caption, color: colors.gray400, textAlign: 'center', marginTop: 4 }}>
+                Trip updates and ghat announcements will appear here.
+              </Text>
             </View>
-          </Card>
-        )}
+          ) : null
+        }
       />
     </View>
   );

@@ -19,7 +19,7 @@ export function AuthProvider({ children }) {
     couponCode: '',
     discountAmount: 0,
     baseFare: 0,
-    convenienceFee: 20,
+    convenienceFee: 0,
     paymentMethod: 'wallet',
   });
 
@@ -212,7 +212,7 @@ export function AuthProvider({ children }) {
       couponCode: '',
       discountAmount: 0,
       baseFare: 0,
-      convenienceFee: 20,
+      convenienceFee: 0,
       paymentMethod: 'wallet',
     });
   };

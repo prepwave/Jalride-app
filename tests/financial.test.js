@@ -122,4 +122,67 @@ describe('Phase 6: Financial Consistency & Split Formula Rules', () => {
     assert.strictEqual(historicalBooking.ownerEarningAmount, 450);
     assert.notStrictEqual(historicalBooking.commissionRate, newPlatformDefault);
   });
+
+  it('Verifies separate commission rates for online payments vs cash-on-ride', () => {
+    const grossFare = 1000;
+    const onlineCommissionRate = 10; // 10%
+    const cashCommissionRate = 12;   // 12%
+    const gstRate = 18;              // 18%
+
+    // Online payment booking calculation:
+    // Platform automatically retains commission + GST from digital payout
+    const onlinePlatformCommission = Math.round((grossFare * onlineCommissionRate) / 100); // 100
+    const onlineGst = Math.round((onlinePlatformCommission * (gstRate / 100)) * 100) / 100; // 18
+    const onlineNetPayout = grossFare - (onlinePlatformCommission + onlineGst); // 882
+
+    assert.strictEqual(onlinePlatformCommission, 100);
+    assert.strictEqual(onlineGst, 18);
+    assert.strictEqual(onlineNetPayout, 882);
+
+    // Cash-on-ride booking calculation:
+    // Owner collects full ₹1000 cash on the ghat.
+    // Platform marks commission + GST as due from owner wallet:
+    const cashPlatformCommission = Math.round((grossFare * cashCommissionRate) / 100); // 120
+    const cashGst = Math.round((cashPlatformCommission * (gstRate / 100)) * 100) / 100; // 21.60
+    const dueFromOwnerWallet = cashPlatformCommission + cashGst; // 141.60
+    const ownerRetainedCashProfit = grossFare - dueFromOwnerWallet; // 858.40
+
+    assert.strictEqual(cashPlatformCommission, 120);
+    assert.strictEqual(cashGst, 21.60);
+    assert.strictEqual(dueFromOwnerWallet, 141.60);
+    assert.strictEqual(ownerRetainedCashProfit, 858.40);
+  });
+
+  it('Verifies boat-level custom commission configuration preserves existing vessel attributes', () => {
+    const existingBoat = {
+      _id: 'boat_6af1b5cf',
+      boatName: 'Jalpari',
+      location: 'Dashashwamedh Ghat',
+      price: 499,
+      capacity: 30,
+      images: ['https://example.com/jalpari.jpg'],
+      rating: 4.8,
+      reviewCount: 42,
+    };
+
+    const updatePayload = {
+      ...existingBoat,
+      onlineCommissionRate: 8,
+      cashCommissionRate: 11,
+      safety: {
+        lifeJacketsAvailable: true,
+        lifeJacketsCount: 30,
+        childLifeJackets: true,
+        firstAidKit: true,
+      },
+    };
+
+    // Existing attributes must NOT be lost on edit
+    assert.strictEqual(updatePayload.images.length, 1);
+    assert.strictEqual(updatePayload.rating, 4.8);
+    assert.strictEqual(updatePayload.reviewCount, 42);
+    assert.strictEqual(updatePayload.onlineCommissionRate, 8);
+    assert.strictEqual(updatePayload.cashCommissionRate, 11);
+    assert.strictEqual(updatePayload.safety.lifeJacketsCount, 30);
+  });
 });

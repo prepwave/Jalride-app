@@ -139,6 +139,20 @@ export default function OwnerFleetScreen({ navigation }) {
             </View>
           </Card>
         )}
+        ListEmptyComponent={
+          <View style={{ padding: 40, alignItems: 'center' }}>
+            <Text style={{ fontSize: 36, marginBottom: 8 }}>🛶</Text>
+            <Text style={{ ...typography.bodyMedium, color: colors.gray500, textAlign: 'center', marginBottom: spacing.m }}>
+              No vessels registered in your fleet yet.
+            </Text>
+            <TouchableOpacity
+              style={styles.addBoatBtn}
+              onPress={() => navigation.navigate('AddEditBoat')}
+            >
+              <Text style={styles.addBoatBtnText}>+ Register First Vessel</Text>
+            </TouchableOpacity>
+          </View>
+        }
       />
     </View>
   );

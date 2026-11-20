@@ -162,6 +162,14 @@ export default function AdminUsersScreen({ navigation }) {
             </View>
           </Card>
         )}
+        ListEmptyComponent={
+          <View style={{ padding: 40, alignItems: 'center' }}>
+            <Text style={{ fontSize: 36, marginBottom: 8 }}>👥</Text>
+            <Text style={{ ...typography.bodyMedium, color: colors.gray500, textAlign: 'center' }}>
+              No registered user accounts match the current filter.
+            </Text>
+          </View>
+        }
       />
     </View>
   );

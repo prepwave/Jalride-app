@@ -89,18 +89,18 @@ export default function OwnerWalletScreen({ navigation }) {
         {/* Earnings Card */}
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>AVAILABLE FOR WITHDRAWAL</Text>
-          <Text style={styles.balanceValue}>₹{wallet?.availableBalance?.toLocaleString('en-IN') || '12,400'}</Text>
+          <Text style={styles.balanceValue}>₹{(wallet?.availableBalance ?? 0).toLocaleString('en-IN')}</Text>
 
           <View style={styles.kpiRow}>
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>₹{wallet?.dueCommissions || '680'}</Text>
+              <Text style={styles.kpiVal}>₹{wallet?.dueCommissions ?? 0}</Text>
               <Text style={styles.kpiLbl}>Due Commission (Cash)</Text>
             </View>
 
             <View style={styles.kpiDivider} />
 
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>₹{wallet?.pendingWithdrawals || '5,000'}</Text>
+              <Text style={styles.kpiVal}>₹{(wallet?.pendingWithdrawals ?? 0).toLocaleString('en-IN')}</Text>
               <Text style={styles.kpiLbl}>Processing Payouts</Text>
             </View>
           </View>
@@ -117,7 +117,7 @@ export default function OwnerWalletScreen({ navigation }) {
         <Card style={styles.noticeCard}>
           <Text style={styles.noticeTitle}>ℹ️ Cash on Ghat Commission Auto-Settlement</Text>
           <Text style={styles.noticeDesc}>
-            For walk-in bookings where cash was handed to you on the ghat, JalRide platform commission is marked as due (₹{wallet?.dueCommissions || '680'}) and is automatically deducted from online booking credits.
+            For walk-in bookings where cash was handed to you on the ghat, JalRide platform commission is marked as due (₹{wallet?.dueCommissions ?? 0}) and is automatically settled against online booking payouts.
           </Text>
         </Card>
 
@@ -129,43 +129,38 @@ export default function OwnerWalletScreen({ navigation }) {
               <Text style={{ fontSize: 22 }}>🏦</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.bankName, isDark && styles.textLight]}>State Bank of India (Varanasi Branch)</Text>
-              <Text style={styles.bankNumber}>A/C: **********5821 • IFSC: SBIN0001234</Text>
+              <Text style={[styles.bankName, isDark && styles.textLight]}>Verified Settlement Bank Account</Text>
+              <Text style={styles.bankNumber}>{user?.bankAccount ? `${user.bankAccount.bankName} • A/C ...${user.bankAccount.accountNumber?.slice(-4)}` : 'Bank details verified via RazorpayX'}</Text>
             </View>
-            <Badge label="Primary" variant="success" size="small" />
+            <Badge label="Active" variant="success" size="small" />
           </View>
         </Card>
 
         {/* Recent Ledger Entries */}
         <Text style={[styles.sectionTitle, isDark && styles.textLight]}>Recent Settlements</Text>
         <Card style={styles.ledgerCard}>
-          <View style={styles.ledgerItem}>
-            <View>
-              <Text style={styles.ledgerTitle}>Maa Ganga Bajra (Booking #JAL-B7829A)</Text>
-              <Text style={styles.ledgerDate}>16 Nov 2026, 09:30 AM</Text>
+          {Array.isArray(wallet?.settlements) && wallet.settlements.length > 0 ? (
+            wallet.settlements.map((s, idx) => (
+              <View key={s._id || idx}>
+                <View style={styles.ledgerItem}>
+                  <View>
+                    <Text style={styles.ledgerTitle}>{s.description || 'Trip Settlement'}</Text>
+                    <Text style={styles.ledgerDate}>{s.date || 'Recent'}</Text>
+                  </View>
+                  <Text style={s.amount >= 0 ? styles.ledgerPositive : styles.ledgerNegative}>
+                    {s.amount >= 0 ? `+₹${s.amount}` : `−₹${Math.abs(s.amount)}`}
+                  </Text>
+                </View>
+                {idx < wallet.settlements.length - 1 && <View style={styles.ledgerDivider} />}
+              </View>
+            ))
+          ) : (
+            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+              <Text style={{ ...typography.caption, color: colors.gray500 }}>
+                No settlement transactions recorded yet. Completed rides and withdrawals will appear here.
+              </Text>
             </View>
-            <Text style={styles.ledgerPositive}>+₹825</Text>
-          </View>
-
-          <View style={styles.ledgerDivider} />
-
-          <View style={styles.ledgerItem}>
-            <View>
-              <Text style={styles.ledgerTitle}>Bank Withdrawal (NEFT Ref #TX8812)</Text>
-              <Text style={styles.ledgerDate}>12 Nov 2026, 02:15 PM</Text>
-            </View>
-            <Text style={styles.ledgerNegative}>−₹5,000</Text>
-          </View>
-
-          <View style={styles.ledgerDivider} />
-
-          <View style={styles.ledgerItem}>
-            <View>
-              <Text style={styles.ledgerTitle}>Cash Booking Commission Deduction</Text>
-              <Text style={styles.ledgerDate}>10 Nov 2026, 06:45 PM</Text>
-            </View>
-            <Text style={styles.ledgerNegative}>−₹75</Text>
-          </View>
+          )}
         </Card>
 
         <View style={{ height: 40 }} />

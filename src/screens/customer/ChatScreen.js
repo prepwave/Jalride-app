@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,69 +9,82 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
+import api from '../../services/api';
 import Header from '../../components/common/Header';
 
 const QUICK_QUESTIONS = [
   'Where is the boat stationed right now?',
   'Are life jackets available for children?',
-  'Will we stop near Dashashwamedh for Ganga Aarti?',
+  'What is the best boarding landmark on the ghat?',
 ];
 
 export default function ChatScreen({ navigation, route }) {
-  const { bookingId } = route.params || {};
+  const { bookingId, captainName } = route.params || {};
   const { isDark } = useTheme();
+  const { user } = useAuth();
 
-  const [messages, setMessages] = useState([
-    {
-      id: '1',
-      sender: 'captain',
-      text: 'Namaste! I am Rameshwar, captain of Maa Ganga Express Bajra. We look forward to welcoming you at Assi Ghat.',
-      time: '04:15 PM',
-    },
-    {
-      id: '2',
-      sender: 'user',
-      text: 'Namaste Captain ji! We will arrive 15 minutes before the 05:45 PM slot.',
-      time: '04:18 PM',
-    },
-    {
-      id: '3',
-      sender: 'captain',
-      text: 'Perfect! The boat is stationed right by the main stone steps near the Ganga Aarti platform. Life jackets are ready onboard.',
-      time: '04:20 PM',
-    },
-  ]);
+  const [conversationId, setConversationId] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
 
-  const handleSend = (textToSend) => {
-    const text = textToSend || inputText;
-    if (!text.trim()) return;
+  useEffect(() => {
+    let isMounted = true;
+    async function initChat() {
+      if (!bookingId) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const convRes = await api.getChatConversation(bookingId);
+        const conv = convRes?.conversation || convRes;
+        if (conv?._id && isMounted) {
+          setConversationId(conv._id);
+          const msgs = await api.getChatMessages(conv._id);
+          if (isMounted) setMessages(msgs || []);
+        }
+      } catch (err) {
+        console.warn('[JalRide Chat] Conversation init error:', err.message);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    initChat();
+    return () => {
+      isMounted = false;
+    };
+  }, [bookingId]);
 
-    const newMsg = {
-      id: String(Date.now()),
-      sender: 'user',
-      text: text.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  const handleSend = async (textToSend) => {
+    const text = (textToSend || inputText).trim();
+    if (!text || isSending) return;
+
+    const optimisticMsg = {
+      _id: String(Date.now()),
+      sender: user?._id || 'user',
+      text,
+      createdAt: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, newMsg]);
+    setMessages((prev) => [...prev, optimisticMsg]);
     if (!textToSend) setInputText('');
 
-    // Simulated Captain Auto-Reply
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: String(Date.now() + 1),
-          sender: 'captain',
-          text: 'Dhanyawad! Noted with thanks. See you soon at the ghat.',
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ]);
-    }, 1200);
+    if (conversationId) {
+      setIsSending(true);
+      try {
+        await api.sendChatMessage(conversationId, text);
+      } catch (err) {
+        console.warn('[JalRide Chat] Send error:', err.message);
+      } finally {
+        setIsSending(false);
+      }
+    }
   };
 
   return (
@@ -83,51 +96,73 @@ export default function ChatScreen({ navigation, route }) {
 
       <Header
         title="Chat with Boat Captain"
-        subtitle="Rameshwar Majhi • Verified Navik"
+        subtitle={captainName ? `${captainName} • Verified Operator` : 'Direct Fleet & Ghat Dispatch'}
         onBack={() => navigation.goBack()}
       />
 
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.messageList}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
-          const isUser = item.sender === 'user';
-          return (
-            <View
-              style={[
-                styles.bubbleWrapper,
-                isUser ? styles.bubbleUserWrapper : styles.bubbleCaptainWrapper,
-              ]}
-            >
+      {loading ? (
+        <View style={styles.centerLoading}>
+          <ActivityIndicator size="small" color={colors.teal} />
+          <Text style={styles.loadingText}>Connecting to operator dispatch...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={messages}
+          keyExtractor={(item, index) => item._id || item.id || String(index)}
+          contentContainerStyle={styles.messageList}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => {
+            const isUser = item.sender === user?._id || item.sender === 'user' || item.isCustomer;
+            const timeStr = item.time || (item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+
+            return (
               <View
                 style={[
-                  styles.bubble,
-                  isUser ? styles.bubbleUser : styles.bubbleCaptain,
+                  styles.bubbleWrapper,
+                  isUser ? styles.bubbleUserWrapper : styles.bubbleCaptainWrapper,
                 ]}
               >
-                <Text
+                <View
                   style={[
-                    styles.bubbleText,
-                    isUser ? styles.bubbleTextUser : styles.bubbleTextCaptain,
+                    styles.bubble,
+                    isUser ? styles.bubbleUser : styles.bubbleCaptain,
                   ]}
                 >
-                  {item.text}
-                </Text>
-                <Text
-                  style={[
-                    styles.bubbleTime,
-                    isUser ? styles.bubbleTimeUser : styles.bubbleTimeCaptain,
-                  ]}
-                >
-                  {item.time}
-                </Text>
+                  <Text
+                    style={[
+                      styles.messageText,
+                      isUser ? styles.messageUserText : styles.messageCaptainText,
+                    ]}
+                  >
+                    {item.text || item.message || item.body}
+                  </Text>
+                  {timeStr ? (
+                    <Text
+                      style={[
+                        styles.messageTime,
+                        isUser ? styles.messageUserTime : styles.messageCaptainTime,
+                      ]}
+                    >
+                      {timeStr}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={{ padding: 40, alignItems: 'center' }}>
+              <Text style={{ fontSize: 36, marginBottom: 8 }}>💬</Text>
+              <Text style={{ ...typography.bodyMedium, color: colors.gray500, textAlign: 'center' }}>
+                No messages yet.
+              </Text>
+              <Text style={{ ...typography.caption, color: colors.gray400, textAlign: 'center', marginTop: 4 }}>
+                Ask your captain about boarding directions, ghat steps, or life vests.
+              </Text>
             </View>
-          );
-        }}
-      />
+          }
+        />
+      )}
 
       {/* Quick Questions Chips */}
       <View style={styles.quickQuestionsRow}>
@@ -207,27 +242,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
   },
-  bubbleText: {
+  messageText: {
     ...typography.body,
     lineHeight: 20,
   },
-  bubbleTextUser: {
+  messageUserText: {
     color: colors.white,
   },
-  bubbleTextCaptain: {
+  messageCaptainText: {
     color: colors.ink,
   },
-  bubbleTime: {
+  messageTime: {
     ...typography.caption,
     fontSize: 10,
     marginTop: 4,
     textAlign: 'right',
   },
-  bubbleTimeUser: {
+  messageUserTime: {
     color: 'rgba(255,255,255,0.7)',
   },
-  bubbleTimeCaptain: {
+  messageCaptainTime: {
     color: colors.gray400,
+  },
+  centerLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    ...typography.caption,
+    color: colors.gray500,
+    marginTop: 8,
   },
   quickQuestionsRow: {
     paddingVertical: spacing.s,

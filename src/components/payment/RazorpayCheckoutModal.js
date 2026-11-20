@@ -83,35 +83,16 @@ export default function RazorpayCheckoutModal({
   const handlePay = async () => {
     setErrorMsg('');
 
-    // If native Razorpay module is linked, use it directly
+    // If native Razorpay module is linked, launch official Razorpay Checkout SDK
     if (handleLaunchNativeIfAvailable()) {
       return;
     }
 
-    // Native in-app Razorpay UI checkout verification flow
-    setIsProcessing(true);
-
-    try {
-      const paymentId = `pay_${Math.random().toString(36).substring(2, 12)}${Date.now().toString(36)}`;
-      
-      // In development / testing environments where native binary SDK is in Expo client,
-      // create the payment verification signature:
-      // Note: Backend strictly verifies razorpay_signature against its key secret.
-      const signaturePayload = {
-        razorpay_order_id: orderId,
-        razorpay_payment_id: paymentId,
-        razorpay_signature: `sig_${paymentId}_${orderId.substring(6)}`,
-      };
-
-      // Slight natural latency for payment gateway settlement
-      await new Promise((r) => setTimeout(r, 600));
-
-      setIsProcessing(false);
-      onSuccess(signaturePayload);
-    } catch (err) {
-      setIsProcessing(false);
-      setErrorMsg(err.message || 'Payment processing error');
-    }
+    // In environments without native Razorpay binaries linked (e.g. standard Expo Go sandbox):
+    // Do NOT simulate payments with fake signatures (backend HMAC verification requires genuine signature).
+    setErrorMsg(
+      'Razorpay payment checkout requires an Android APK or Development Build with native react-native-razorpay modules linked. Direct simulated payments are disabled in production.'
+    );
   };
 
   return (

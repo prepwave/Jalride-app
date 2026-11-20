@@ -21,6 +21,13 @@ import Badge from '../../components/common/Badge';
 import Button from '../../components/common/Button';
 import RazorpayCheckoutModal from '../../components/payment/RazorpayCheckoutModal';
 
+function formatLocalDate(d) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function BookingWizardScreen({ navigation, route }) {
   const { boat: initialBoat } = route.params || {};
   const { user, bookingDraft, updateBookingDraft, resetBookingDraft } = useAuth();
@@ -28,9 +35,11 @@ export default function BookingWizardScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
 
   const [step, setStep] = useState(1);
-  const [selectedDate, setSelectedDate] = useState(
-    new Date(Date.now() + 86400000).toISOString().split('T')[0]
-  );
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return formatLocalDate(tomorrow);
+  });
   const [slots, setSlots] = useState([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
@@ -79,12 +88,12 @@ export default function BookingWizardScreen({ navigation, route }) {
     }
   }, [boat?._id, selectedDate]);
 
-  // Calculate dates for the next 7 days
+  // Calculate dates for the next 7 days in local timezone
   const upcomingDates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() + i);
     return {
-      dateString: d.toISOString().split('T')[0],
+      dateString: formatLocalDate(d),
       dayName: d.toLocaleDateString('en-US', { weekday: 'short' }),
       dayNumber: d.getDate(),
       month: d.toLocaleDateString('en-US', { month: 'short' }),
@@ -127,7 +136,7 @@ export default function BookingWizardScreen({ navigation, route }) {
       const payload = {
         boatId: boat?._id,
         bookingDate: selectedDate,
-        bookingTime: selectedSlot?.time || '09:30',
+        bookingTime: selectedSlot?.time || slots[0]?.time || '09:30',
         passengers: isWholeBoat ? (boat?.capacity || 10) : passengers,
         charterType: isWholeBoat ? 'whole_boat' : 'shared',
         couponCode: couponDiscount > 0 ? couponCode : undefined,

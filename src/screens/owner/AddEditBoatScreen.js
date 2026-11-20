@@ -77,6 +77,14 @@ export default function AddEditBoatScreen({ navigation, route }) {
     boat?.wholeBoatPrice ? String(boat.wholeBoatPrice) : '3500'
   );
 
+  // Commission Rates for Owner
+  const [onlineCommissionRate, setOnlineCommissionRate] = useState(
+    boat?.onlineCommissionRate ? String(boat.onlineCommissionRate) : '10'
+  );
+  const [cashCommissionRate, setCashCommissionRate] = useState(
+    boat?.cashCommissionRate ? String(boat.cashCommissionRate) : '12'
+  );
+
   const [selectedAmenities, setSelectedAmenities] = useState(
     boat?.amenities || ['Life Jackets', 'First Aid Kit']
   );
@@ -103,6 +111,7 @@ export default function AddEditBoatScreen({ navigation, route }) {
     setIsSaving(true);
     try {
       const payload = {
+        ...(boat || {}), // preserve existing properties like images, reviews, ratings
         boatName: boatName.trim(),
         location,
         boatType,
@@ -112,6 +121,8 @@ export default function AddEditBoatScreen({ navigation, route }) {
         amenities: selectedAmenities,
         allowWholeBoatBooking,
         wholeBoatPrice: allowWholeBoatBooking ? (parseFloat(wholeBoatPrice) || 0) : undefined,
+        onlineCommissionRate: parseFloat(onlineCommissionRate) || 10,
+        cashCommissionRate: parseFloat(cashCommissionRate) || 12,
         safety: {
           lifeJacketsAvailable,
           lifeJacketsCount: lifeJacketsAvailable ? (parseInt(lifeJacketsCount) || 0) : 0,
@@ -145,7 +156,7 @@ export default function AddEditBoatScreen({ navigation, route }) {
 
       <Header
         title={isEditing ? 'Edit Boat Details' : 'Register New Boat'}
-        subtitle="Varanasi Port & Inland Waterways Registry"
+        subtitle="Global Waterways & Boat Registry"
         onBack={() => navigation.goBack()}
       />
 
@@ -304,6 +315,30 @@ export default function AddEditBoatScreen({ navigation, route }) {
               trackColor={{ true: colors.tealMist, false: colors.gray200 }}
             />
           </View>
+        </Card>
+
+        {/* Commission Engine Configuration for Vessel */}
+        <Text style={[styles.sectionHeading, isDark && styles.textLight]}>Commission & Payout Preferences</Text>
+        <Card style={styles.optionCard}>
+          <Text style={styles.optionTitle}>Online Payment Commission Rate (%)</Text>
+          <Text style={styles.optionSub}>Platform fee deducted from digital payouts (UPI, Card, Wallet) - Default: 10%</Text>
+          <TextInput
+            style={[styles.input, { marginTop: spacing.s }]}
+            keyboardType="numeric"
+            placeholder="10"
+            value={onlineCommissionRate}
+            onChangeText={setOnlineCommissionRate}
+          />
+
+          <Text style={[styles.optionTitle, { marginTop: spacing.m }]}>Cash-on-Ride Commission Rate (%)</Text>
+          <Text style={styles.optionSub}>Platform fee debited against wallet for cash collected directly on ghat - Default: 12%</Text>
+          <TextInput
+            style={[styles.input, { marginTop: spacing.s }]}
+            keyboardType="numeric"
+            placeholder="12"
+            value={cashCommissionRate}
+            onChangeText={setCashCommissionRate}
+          />
         </Card>
 
         {/* Operating Experience */}

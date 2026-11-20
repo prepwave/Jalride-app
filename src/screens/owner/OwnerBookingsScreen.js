@@ -123,77 +123,94 @@ export default function OwnerBookingsScreen({ navigation }) {
             tintColor={colors.teal}
           />
         }
-        renderItem={({ item }) => (
-          <Card style={styles.card}>
-            <View style={styles.cardTop}>
-              <View>
-                <Text style={styles.ticketId}>{item.ticketId}</Text>
-                <Text style={[styles.customerName, isDark && styles.textLight]}>
-                  {item.customerName}
-                </Text>
-                <Text style={styles.customerPhone}>📞 {item.customerPhone}</Text>
+        renderItem={({ item }) => {
+          const isCash = item.paymentMethod === 'cash';
+          const commRate = isCash
+            ? (item.boat?.cashCommissionRate ?? 12)
+            : (item.boat?.onlineCommissionRate ?? 10);
+          const commAmt = Math.round((item.totalAmount * commRate) / 100);
+          const netEarnings = item.totalAmount - commAmt;
+
+          return (
+            <Card style={styles.card}>
+              <View style={styles.cardTop}>
+                <View>
+                  <Text style={styles.ticketId}>{item.ticketId}</Text>
+                  <Text style={[styles.customerName, isDark && styles.textLight]}>
+                    {item.customerName}
+                  </Text>
+                  <Text style={styles.customerPhone}>📞 {item.customerPhone}</Text>
+                </View>
+
+                <Badge
+                  label={item.status}
+                  variant={item.status === 'confirmed' ? 'success' : item.status === 'pending' ? 'warning' : 'default'}
+                />
               </View>
 
-              <Badge
-                label={item.status}
-                variant={item.status === 'confirmed' ? 'success' : item.status === 'pending' ? 'warning' : 'default'}
-              />
-            </View>
+              <View style={styles.divider} />
 
-            <View style={styles.divider} />
+              <View style={styles.row}>
+                <Text style={styles.infoText}>📍 {item.boat?.location}</Text>
+                <Text style={styles.infoText}>🕒 {item.bookingDate} ({item.bookingTime})</Text>
+                <Text style={styles.infoText}>👥 {item.passengers} Seats</Text>
+              </View>
 
-            <View style={styles.row}>
-              <Text style={styles.infoText}>📍 {item.boat?.location}</Text>
-              <Text style={styles.infoText}>🕒 {item.bookingDate} ({item.bookingTime})</Text>
-              <Text style={styles.infoText}>👥 {item.passengers} Seats</Text>
-            </View>
+              <View style={styles.fareBox}>
+                <Text style={styles.fareLabel}>Total Fare: ₹{item.totalAmount}</Text>
+                <Text style={styles.earningLabel}>
+                  Your Net ({100 - commRate}%): <Text style={styles.earningHighlight}>₹{netEarnings}</Text>
+                </Text>
+              </View>
 
-            <View style={styles.fareBox}>
-              <Text style={styles.fareLabel}>Total Fare: ₹{item.totalAmount}</Text>
-              <Text style={styles.earningLabel}>
-                Your Net (85%): <Text style={styles.earningHighlight}>₹{item.totalAmount - Math.round(item.totalAmount * 0.15)}</Text>
-              </Text>
-            </View>
+              {/* Lifecycle Action Buttons */}
+              <View style={styles.actionGrid}>
+                <TouchableOpacity
+                  style={styles.actionBtnConfirm}
+                  onPress={() => handleAction('confirm', item._id)}
+                >
+                  <Text style={styles.btnTextWhite}>✓ Confirm</Text>
+                </TouchableOpacity>
 
-            {/* Lifecycle Action Buttons */}
-            <View style={styles.actionGrid}>
-              <TouchableOpacity
-                style={styles.actionBtnConfirm}
-                onPress={() => handleAction('confirm', item._id)}
-              >
-                <Text style={styles.btnTextWhite}>✓ Confirm</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionBtnHold}
+                  onPress={() => handleAction('hold', item._id)}
+                >
+                  <Text style={styles.btnTextDark}>⏸ Hold</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.actionBtnHold}
-                onPress={() => handleAction('hold', item._id)}
-              >
-                <Text style={styles.btnTextDark}>⏸ Hold</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionBtnCash}
+                  onPress={() => handleAction('cash', item._id)}
+                >
+                  <Text style={styles.btnTextWhite}>💵 Cash Received</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.actionBtnCash}
-                onPress={() => handleAction('cash', item._id)}
-              >
-                <Text style={styles.btnTextWhite}>💵 Cash Received</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionBtnComplete}
+                  onPress={() => handleAction('complete', item._id)}
+                >
+                  <Text style={styles.btnTextWhite}>🏁 Finish Ride</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.actionBtnComplete}
-                onPress={() => handleAction('complete', item._id)}
-              >
-                <Text style={styles.btnTextWhite}>🏁 Finish Ride</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.actionBtnCancel}
-                onPress={() => handleAction('cancel', item._id)}
-              >
-                <Text style={styles.btnTextDanger}>✕ Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </Card>
-        )}
+                <TouchableOpacity
+                  style={styles.actionBtnCancel}
+                  onPress={() => handleAction('cancel', item._id)}
+                >
+                  <Text style={styles.btnTextDanger}>✕ Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          );
+        }}
+        ListEmptyComponent={
+          <View style={{ padding: 40, alignItems: 'center' }}>
+            <Text style={{ fontSize: 36, marginBottom: 8 }}>📋</Text>
+            <Text style={{ ...typography.bodyMedium, color: colors.gray500, textAlign: 'center' }}>
+              No bookings match the selected filter.
+            </Text>
+          </View>
+        }
       />
     </View>
   );

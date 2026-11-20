@@ -96,7 +96,7 @@ export default function TicketScreen({ navigation, route }) {
           <View style={styles.ticketTopBar}>
             <View>
               <Text style={styles.jalBrand}>JALRIDE</Text>
-              <Text style={styles.govText}>Govt. Approved Ghat Navigation Pass</Text>
+              <Text style={styles.govText}>Official Smart Boat Digital Boarding Pass</Text>
             </View>
             <Badge label={booking.status || 'Confirmed'} variant="success" />
           </View>

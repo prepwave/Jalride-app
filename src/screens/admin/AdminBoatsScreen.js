@@ -136,7 +136,7 @@ export default function AdminBoatsScreen({ navigation }) {
                 </View>
 
                 <Text style={styles.ghatLabel}>📍 {item.location} • {item.boatType}</Text>
-                <Text style={styles.ownerText}>Owner: {item.owner?.name || 'Rameshwar Majhi'}</Text>
+                <Text style={styles.ownerText}>Owner: {item.owner?.name || 'Registered Operator'}</Text>
                 <Text style={styles.fareText}>₹{item.price} / seat • {item.capacity} Seats</Text>
               </View>
             </View>
@@ -159,6 +159,14 @@ export default function AdminBoatsScreen({ navigation }) {
             </View>
           </Card>
         )}
+        ListEmptyComponent={
+          <View style={{ padding: 40, alignItems: 'center' }}>
+            <Text style={{ fontSize: 36, marginBottom: 8 }}>🛶</Text>
+            <Text style={{ ...typography.bodyMedium, color: colors.gray500, textAlign: 'center' }}>
+              No vessels registered under this status.
+            </Text>
+          </View>
+        }
       />
     </View>
   );

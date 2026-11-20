@@ -190,18 +190,18 @@ export default function CustomerWalletScreen({ navigation }) {
             <Badge label="Active" variant="success" size="small" />
           </View>
 
-          <Text style={styles.balanceAmount}>₹{wallet?.balance?.toLocaleString('en-IN') || '1,450'}</Text>
+          <Text style={styles.balanceAmount}>₹{(wallet?.balance ?? 0).toLocaleString('en-IN')}</Text>
 
           <View style={styles.miniStatsRow}>
             <View style={styles.miniStatCol}>
-              <Text style={styles.miniStatVal}>₹{wallet?.cashbackEarned || '220'}</Text>
+              <Text style={styles.miniStatVal}>₹{wallet?.cashbackEarned ?? 0}</Text>
               <Text style={styles.miniStatLbl}>Cashback Earned</Text>
             </View>
 
             <View style={styles.statDivider} />
 
             <View style={styles.miniStatCol}>
-              <Text style={styles.miniStatVal}>{wallet?.loyaltyPoints || '340'} pts</Text>
+              <Text style={styles.miniStatVal}>{wallet?.loyaltyPoints ?? 0} pts</Text>
               <Text style={styles.miniStatLbl}>Loyalty Rewards</Text>
             </View>
 

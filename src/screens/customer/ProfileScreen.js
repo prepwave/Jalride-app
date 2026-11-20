@@ -58,8 +58,8 @@ export default function ProfileScreen({ navigation }) {
           </View>
 
           <View style={styles.profileInfo}>
-            <Text style={[styles.userName, isDark && styles.textLight]}>{user?.name || 'Aman Sharma'}</Text>
-            <Text style={styles.userEmail}>{user?.email || 'aman@example.com'}</Text>
+            <Text style={[styles.userName, isDark && styles.textLight]}>{user?.name || 'JalRide User'}</Text>
+            <Text style={styles.userEmail}>{user?.email || ''}</Text>
             <View style={styles.badgeRow}>
               <Badge label={`Role: ${activeRole}`} variant="teal" size="small" />
               {user?.isEmailVerified && (

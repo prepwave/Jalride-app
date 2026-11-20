@@ -20,7 +20,8 @@ import Button from '../../components/common/Button';
 export default function AdminSettingsScreen({ navigation }) {
   const { isDark } = useTheme();
 
-  const [commissionRate, setCommissionRate] = useState('15');
+  const [onlineCommissionRate, setOnlineCommissionRate] = useState('10');
+  const [cashCommissionRate, setCashCommissionRate] = useState('12');
   const [gstRate, setGstRate] = useState('18');
   const [cashbackPercent, setCashbackPercent] = useState('10');
   const [holdDays, setHoldDays] = useState('3');
@@ -31,16 +32,17 @@ export default function AdminSettingsScreen({ navigation }) {
   const [newDiscount, setNewDiscount] = useState('100');
 
   const loadCoupons = () => {
-    api.getAdminCoupons().then((c) => setCoupons(c || [])).catch(() => {});
+    api.getAdminCoupons().then((c) => setCoupons(c || [])).catch(() => setCoupons([]));
   };
 
   useEffect(() => {
     api.getPlatformSettings().then((s) => {
       if (s) {
-        setCommissionRate(String(s.defaultCommissionRate || s.platformCommissionRate || 15));
-        setGstRate(String(s.commissionGstRate || 18));
-        setCashbackPercent(String(s.cashbackPercent || 10));
-        setHoldDays(String(s.payoutHoldDays || s.settlementHoldDays || 3));
+        setOnlineCommissionRate(String(s.onlineCommissionRate ?? s.defaultCommissionRate ?? 10));
+        setCashCommissionRate(String(s.cashCommissionRate ?? s.defaultCommissionRate ?? 12));
+        setGstRate(String(s.commissionGstRate ?? 18));
+        setCashbackPercent(String(s.cashbackPercent ?? 10));
+        setHoldDays(String(s.payoutHoldDays ?? s.settlementHoldDays ?? 3));
       }
     });
 
@@ -50,14 +52,16 @@ export default function AdminSettingsScreen({ navigation }) {
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
-      // Production invariant: Use exact backend editable keys
+      // Production invariant: Separate cash on ride vs online payment commission rates
       await api.updatePlatformSettings({
-        defaultCommissionRate: parseFloat(commissionRate),
+        defaultCommissionRate: parseFloat(onlineCommissionRate),
+        onlineCommissionRate: parseFloat(onlineCommissionRate),
+        cashCommissionRate: parseFloat(cashCommissionRate),
         commissionGstRate: parseFloat(gstRate),
         cashbackPercent: parseFloat(cashbackPercent),
         payoutHoldDays: parseInt(holdDays),
       });
-      Alert.alert('Settings Updated', 'Platform financial split rules updated across all Varanasi boat bookings.');
+      Alert.alert('Settings Updated', 'Platform commission rules updated (separate cash and online rates applied).');
     } catch (e) {
       Alert.alert('Settings Saved', 'Platform rates and commission configuration updated successfully.');
     } finally {
@@ -102,15 +106,26 @@ export default function AdminSettingsScreen({ navigation }) {
         </Text>
 
         <Card style={styles.formCard}>
-          <Text style={styles.inputLabel}>Platform Commission Rate (%)</Text>
+          <Text style={styles.inputLabel}>Online Payment Commission Rate (%)</Text>
           <TextInput
             style={styles.input}
             keyboardType="numeric"
-            value={commissionRate}
-            onChangeText={setCommissionRate}
+            value={onlineCommissionRate}
+            onChangeText={setOnlineCommissionRate}
           />
           <Text style={styles.inputHelp}>
-            Percentage retained by JalRide from each booking (Default: 12% - 15%).
+            Percentage retained on Razorpay, UPI, Card and digital wallet bookings (Default: 10%).
+          </Text>
+
+          <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Cash-on-Ride Commission Rate (%)</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            value={cashCommissionRate}
+            onChangeText={setCashCommissionRate}
+          />
+          <Text style={styles.inputHelp}>
+            Percentage due from owner for cash collected directly on ghat boarding (Default: 12%).
           </Text>
 
           <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Commission GST Rate (%)</Text>
@@ -181,15 +196,23 @@ export default function AdminSettingsScreen({ navigation }) {
           </View>
 
           <View style={styles.couponList}>
-            {coupons.map((c) => (
-              <View key={c._id} style={styles.couponItem}>
-                <View>
-                  <Text style={styles.couponCode}>{c.code}</Text>
-                  <Text style={styles.couponDiscount}>Flat ₹{c.discountAmount} Discount</Text>
-                </View>
-                <Badge label={c.isActive ? 'Active' : 'Disabled'} variant={c.isActive ? 'success' : 'default'} />
+            {coupons.length === 0 ? (
+              <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                <Text style={{ ...typography.caption, color: colors.gray500 }}>
+                  No promotional coupons created yet. Add a code above.
+                </Text>
               </View>
-            ))}
+            ) : (
+              coupons.map((c) => (
+                <View key={c._id} style={styles.couponItem}>
+                  <View>
+                    <Text style={styles.couponCode}>{c.code}</Text>
+                    <Text style={styles.couponDiscount}>Flat ₹{c.discountAmount} Discount</Text>
+                  </View>
+                  <Badge label={c.isActive ? 'Active' : 'Disabled'} variant={c.isActive ? 'success' : 'default'} />
+                </View>
+              ))
+            )}
           </View>
         </Card>
 
