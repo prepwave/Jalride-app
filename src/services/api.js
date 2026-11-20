@@ -422,7 +422,6 @@ class ApiService {
       body: payload,
     });
   }
-  }
 
   async verifyTicketQr(qrData) {
     let payload = null;
