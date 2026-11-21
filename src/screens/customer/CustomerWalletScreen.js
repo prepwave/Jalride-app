@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,10 @@ import {
   RefreshControl,
   StatusBar,
   Alert,
+  AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -30,7 +32,7 @@ export default function CustomerWalletScreen({ navigation }) {
   const [wallet, setWallet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'topup' | 'booking' | 'refund'
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'topup' | 'booking' | 'refund' | 'withdrawals'
 
   // Topup sheet state
   const [showTopupSheet, setShowTopupSheet] = useState(false);
@@ -44,28 +46,75 @@ export default function CustomerWalletScreen({ navigation }) {
   // Withdraw sheet state
   const [showWithdrawSheet, setShowWithdrawSheet] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [bankAccNumber, setBankAccNumber] = useState('');
-  const [ifscCode, setIfscCode] = useState('');
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [selectedBankId, setSelectedBankId] = useState(null);
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [rawTransactions, setRawTransactions] = useState([]);
+  const [isSubmittingWithdrawal, setIsSubmittingWithdrawal] = useState(false);
+  const [withdrawError, setWithdrawError] = useState('');
 
-  const loadWalletData = async () => {
+  const isFetchingRef = useRef(false);
+
+  const loadWalletData = useCallback(async (isSilent = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    if (!isSilent) setLoading(true);
     try {
-      const data = await api.getCustomerWallet();
-      setWallet(data || {});
+      const [walletData, txList, accountsList, withList] = await Promise.all([
+        api.getCustomerWallet(),
+        api.getCustomerWalletTransactions(),
+        api.getCustomerBankAccounts(),
+        api.getCustomerWithdrawals(),
+      ]);
+      setWallet(walletData || {});
+      const transactionsData = Array.isArray(txList)
+        ? txList
+        : Array.isArray(txList?.transactions)
+        ? txList.transactions
+        : Array.isArray(txList?.data)
+        ? txList.data
+        : [];
+      setRawTransactions(transactionsData);
+      const accounts = Array.isArray(accountsList) ? accountsList : [];
+      setBankAccounts(accounts);
+      if (accounts.length > 0) {
+        setSelectedBankId((prevId) => {
+          if (prevId && accounts.some((a) => a._id === prevId)) return prevId;
+          const primary = accounts.find((a) => a.isPrimary) || accounts[0];
+          return primary._id;
+        });
+      }
+      setWithdrawals(Array.isArray(withList) ? withList : []);
     } catch (e) {
       console.warn('Error loading wallet:', e);
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadWalletData(true);
+    }, [loadWalletData])
+  );
 
   useEffect(() => {
     loadWalletData();
-  }, []);
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        loadWalletData(true);
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [loadWalletData]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadWalletData();
+    loadWalletData(false);
   };
 
   const handleExecuteTopup = async () => {
@@ -111,53 +160,58 @@ export default function CustomerWalletScreen({ navigation }) {
   };
 
   const handleExecuteWithdrawal = async () => {
+    setWithdrawError('');
     const amt = parseFloat(withdrawAmount);
-    if (!amt || amt <= 0 || amt > (wallet?.balance || 0)) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount within your wallet balance.');
+    const minAmt = wallet?.minWithdrawAmount || 100;
+    const currentBalance = wallet?.balance || 0;
+
+    if (!amt || isNaN(amt) || amt <= 0) {
+      setWithdrawError('Please enter a valid amount.');
       return;
     }
-    if (!bankAccNumber || !ifscCode) {
-      Alert.alert('Bank Details Required', 'Please enter your bank account number and IFSC code.');
+    if (amt < minAmt) {
+      setWithdrawError(`Minimum withdrawal amount is ₹${minAmt}.`);
+      return;
+    }
+    if (amt > currentBalance) {
+      setWithdrawError(`Only ₹${currentBalance} is available to withdraw right now.`);
+      return;
+    }
+    if (!selectedBankId) {
+      setWithdrawError('Please select a saved bank account for payout.');
       return;
     }
 
-    setLoading(true);
+    setIsSubmittingWithdrawal(true);
     try {
-      let bankAccId = null;
-      try {
-        const accountsRes = await api.getCustomerBankAccounts();
-        const accounts = accountsRes?.bankAccounts || accountsRes?.data || [];
-        const match = accounts.find((a) => a.accountNumber === bankAccNumber);
-        if (match) {
-          bankAccId = match._id;
-        } else {
-          const added = await api.addCustomerBankAccount({
-            accountNumber: bankAccNumber,
-            ifsc: ifscCode.toUpperCase().trim(),
-            accountHolderName: user?.name || 'Customer',
-          });
-          bankAccId = added?.bankAccount?._id || added?._id;
-        }
-      } catch (e) {
-        console.warn('Bank lookup note:', e);
+      const res = await api.requestCustomerWithdrawal(amt, selectedBankId);
+      if (res && res.success) {
+        setShowWithdrawSheet(false);
+        setWithdrawAmount('');
+        Alert.alert(
+          'Withdrawal Requested! 🏦',
+          res.message || `₹${amt} withdrawal requested — pending admin payout clearance.`
+        );
+        await loadWalletData();
+      } else {
+        throw new Error(res?.message || 'Failed to submit withdrawal request.');
       }
-
-      await api.requestCustomerWithdrawal(amt, bankAccId);
-      setShowWithdrawSheet(false);
-      Alert.alert('Withdrawal Submitted', `₹${amt} withdrawal request submitted. Payout will be processed within 24 business hours.`);
-      await loadWalletData();
     } catch (err) {
-      Alert.alert('Withdrawal Failed', err.message || 'Unable to submit withdrawal request.');
+      setWithdrawError(err.message || 'Unable to submit withdrawal request.');
     } finally {
-      setLoading(false);
+      setIsSubmittingWithdrawal(false);
     }
   };
 
-  const transactions = (wallet?.transactions || []).filter((tx) => {
+  const allTransactions = rawTransactions.length > 0
+    ? rawTransactions
+    : (wallet?.transactions || []);
+
+  const transactions = allTransactions.filter((tx) => {
     if (activeFilter === 'all') return true;
-    if (activeFilter === 'topup') return tx.type === 'topup';
-    if (activeFilter === 'booking') return tx.type === 'booking_debit';
-    if (activeFilter === 'refund') return tx.type === 'refund_credit' || tx.type === 'cashback';
+    if (activeFilter === 'topup') return tx.type === 'topup' || tx.type === 'reward' || tx.type === 'wallet_topup';
+    if (activeFilter === 'booking') return tx.type === 'booking_payment' || tx.type === 'booking_debit' || tx.type === 'booking' || tx.amount < 0;
+    if (activeFilter === 'refund') return tx.type === 'refund_credit' || tx.type === 'cashback' || tx.type === 'refund';
     return true;
   });
 
@@ -219,7 +273,7 @@ export default function CustomerWalletScreen({ navigation }) {
               style={styles.topupBtn}
               onPress={() => setShowTopupSheet(true)}
             >
-              <Text style={styles.topupBtnText}>+ Top Up Balance</Text>
+              <Text style={styles.topupBtnText}>+ Top Up</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -227,6 +281,13 @@ export default function CustomerWalletScreen({ navigation }) {
               onPress={() => setShowWithdrawSheet(true)}
             >
               <Text style={styles.withdrawBtnText}>Withdraw</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.bankBtn}
+              onPress={() => navigation.navigate('ManageBankAccounts')}
+            >
+              <Text style={styles.bankBtnText}>🏦 Banks</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -247,7 +308,7 @@ export default function CustomerWalletScreen({ navigation }) {
         </View>
 
         <View style={styles.filterPillRow}>
-          {['all', 'topup', 'booking', 'refund'].map((f) => (
+          {['all', 'topup', 'booking', 'refund', 'withdrawals'].map((f) => (
             <TouchableOpacity
               key={f}
               style={[
@@ -268,37 +329,79 @@ export default function CustomerWalletScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Transactions List */}
-        <View style={styles.txList}>
-          {transactions.map((tx) => {
-            const isPositive = tx.amount > 0;
-            return (
-              <View key={tx._id} style={styles.txItem}>
-                <View style={styles.txIconBox}>
-                  <Text style={styles.txEmoji}>
-                    {tx.type === 'topup' ? '💳' : tx.type === 'cashback' ? '🎁' : tx.type === 'refund_credit' ? '🔄' : '🛶'}
-                  </Text>
-                </View>
-
-                <View style={styles.txContent}>
-                  <Text style={[styles.txTitle, isDark && styles.textLight]}>{tx.description}</Text>
-                  <Text style={styles.txDate}>{new Date(tx.createdAt).toLocaleDateString()}</Text>
-                </View>
-
-                <View style={styles.txAmountCol}>
-                  <Text style={[styles.txAmount, isPositive ? styles.txPositive : styles.txNegative]}>
-                    {isPositive ? '+' : ''}₹{Math.abs(tx.amount)}
-                  </Text>
-                  <Badge
-                    label={tx.status}
-                    variant={tx.status === 'success' ? 'success' : 'warning'}
-                    size="small"
-                  />
-                </View>
+        {/* Transactions / Withdrawals List */}
+        {activeFilter === 'withdrawals' ? (
+          <View style={styles.txList}>
+            {withdrawals.length === 0 ? (
+              <View style={styles.emptyInlineBox}>
+                <Text style={styles.emptyInlineText}>No withdrawal requests submitted yet.</Text>
               </View>
-            );
-          })}
-        </View>
+            ) : (
+              withdrawals.map((w) => (
+                <View key={w._id} style={styles.txItem}>
+                  <View style={styles.txIconBox}>
+                    <Text style={styles.txEmoji}>🏦</Text>
+                  </View>
+                  <View style={styles.txContent}>
+                    <Text style={[styles.txTitle, isDark && styles.textLight]}>
+                      Payout to {w.bankAccount?.bankName || 'Bank'} (•• {w.bankAccount?.accountNumberLast4 || '••••'})
+                    </Text>
+                    <Text style={styles.txDate}>
+                      {new Date(w.createdAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <View style={styles.txAmountCol}>
+                    <Text style={[styles.txAmount, styles.txNegative]}>-₹{w.amount}</Text>
+                    <Badge
+                      label={w.status === 'pending' ? 'Pending' : w.status === 'approved' ? 'Approved' : 'Rejected'}
+                      variant={w.status === 'approved' ? 'success' : w.status === 'pending' ? 'warning' : 'danger'}
+                      size="small"
+                    />
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        ) : (
+          <View style={styles.txList}>
+            {transactions.length === 0 ? (
+              <View style={styles.emptyInlineBox}>
+                <Text style={styles.emptyInlineText}>No transactions found in this category.</Text>
+              </View>
+            ) : (
+              transactions.map((tx) => {
+                const isPositive = tx.amount > 0;
+                return (
+                  <View key={tx._id} style={styles.txItem}>
+                    <View style={styles.txIconBox}>
+                      <Text style={styles.txEmoji}>
+                        {tx.type === 'topup' ? '💳' : tx.type === 'cashback' ? '🎁' : tx.type === 'refund_credit' ? '🔄' : '🛶'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.txContent}>
+                      <Text style={[styles.txTitle, isDark && styles.textLight]}>
+                        {tx.note || tx.description || (tx.type === 'booking_payment' ? `Booking ${tx.booking?.ticketId || 'Payment'}` : tx.type)}
+                      </Text>
+                      <Text style={styles.txDate}>{new Date(tx.createdAt || Date.now()).toLocaleDateString()}</Text>
+                    </View>
+
+                    <View style={styles.txAmountCol}>
+                      <Text style={[styles.txAmount, isPositive ? styles.txPositive : styles.txNegative]}>
+                        {isPositive ? '+' : ''}₹{Math.abs(tx.amount)}
+                      </Text>
+                      <Badge
+                        label={(tx.status || 'completed').toUpperCase()}
+                        variant={tx.status === 'completed' || tx.status === 'success' || !tx.status ? 'success' : tx.status === 'failed' ? 'danger' : 'warning'}
+                        size="small"
+                      />
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -353,43 +456,137 @@ export default function CustomerWalletScreen({ navigation }) {
       {/* Withdraw BottomSheet */}
       <BottomSheet
         visible={showWithdrawSheet}
-        onClose={() => setShowWithdrawSheet(false)}
+        onClose={() => {
+          if (!isSubmittingWithdrawal) {
+            setShowWithdrawSheet(false);
+            setWithdrawError('');
+          }
+        }}
         title="Withdraw Funds to Bank"
-        subtitle="Direct NEFT/IMPS payout to your savings account"
-        height={480}
+        subtitle="Direct NEFT/IMPS payout to your verified bank account"
+        height={560}
       >
-        <Text style={styles.sheetLabel}>Withdrawal Amount (Max ₹{wallet?.balance || 0})</Text>
-        <TextInput
-          style={styles.sheetInput}
-          keyboardType="numeric"
-          value={withdrawAmount}
-          onChangeText={setWithdrawAmount}
-          placeholder="Amount in ₹"
-        />
+        <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }}>
+          {withdrawError ? (
+            <View style={styles.withdrawErrorBox}>
+              <Text style={styles.withdrawErrorText}>⚠️ {withdrawError}</Text>
+            </View>
+          ) : null}
 
-        <Text style={[styles.sheetLabel, { marginTop: spacing.m }]}>Bank Account Number</Text>
-        <TextInput
-          style={styles.sheetInput}
-          keyboardType="numeric"
-          value={bankAccNumber}
-          onChangeText={setBankAccNumber}
-          placeholder="e.g. 5010048192841"
-        />
+          {/* Balance summary cards */}
+          <View style={styles.withdrawSummaryRow}>
+            <View style={styles.withdrawSummaryCol}>
+              <Text style={styles.withdrawSummaryLabel}>Available Balance</Text>
+              <Text style={styles.withdrawSummaryValue}>₹{(wallet?.balance ?? 0).toLocaleString('en-IN')}</Text>
+            </View>
+            <View style={styles.withdrawSummaryCol}>
+              <Text style={styles.withdrawSummaryLabel}>Min Payout</Text>
+              <Text style={styles.withdrawSummaryValue}>₹{wallet?.minWithdrawAmount ?? 100}</Text>
+            </View>
+            {wallet?.reservedForWithdrawal > 0 ? (
+              <View style={styles.withdrawSummaryCol}>
+                <Text style={styles.withdrawSummaryLabel}>Pending</Text>
+                <Text style={[styles.withdrawSummaryValue, { color: colors.warning }]}>
+                  ₹{wallet.reservedForWithdrawal}
+                </Text>
+              </View>
+            ) : null}
+          </View>
 
-        <Text style={[styles.sheetLabel, { marginTop: spacing.m }]}>Bank IFSC Code</Text>
-        <TextInput
-          style={styles.sheetInput}
-          value={ifscCode}
-          onChangeText={setIfscCode}
-          placeholder="e.g. HDFC0001234"
-          autoCapitalize="characters"
-        />
+          {/* Bank Account Selection */}
+          <Text style={[styles.sheetLabel, { marginTop: spacing.m }]}>Select Payout Bank Account</Text>
 
-        <Button
-          title="Submit Withdrawal Request"
-          onPress={handleExecuteWithdrawal}
-          style={{ marginTop: spacing.xl }}
-        />
+          {bankAccounts.length === 0 ? (
+            <Card style={styles.noBankCard}>
+              <Text style={styles.noBankTitle}>🏦 No Bank Accounts Linked</Text>
+              <Text style={styles.noBankText}>
+                You must link a verified bank account before you can withdraw wallet funds.
+              </Text>
+              <TouchableOpacity
+                style={styles.linkBankBtn}
+                onPress={() => {
+                  setShowWithdrawSheet(false);
+                  navigation.navigate('ManageBankAccounts');
+                }}
+              >
+                <Text style={styles.linkBankBtnText}>+ Link Bank Account Now →</Text>
+              </TouchableOpacity>
+            </Card>
+          ) : (
+            <View style={styles.bankSelectGroup}>
+              {bankAccounts.map((acc) => {
+                const isSelected = selectedBankId === acc._id;
+                const last4 = acc.accountNumberLast4 || (acc.accountNumber ? acc.accountNumber.slice(-4) : '••••');
+                return (
+                  <TouchableOpacity
+                    key={acc._id}
+                    style={[styles.bankSelectCard, isSelected && styles.bankSelectCardActive]}
+                    onPress={() => {
+                      setSelectedBankId(acc._id);
+                      if (withdrawError) setWithdrawError('');
+                    }}
+                  >
+                    <View style={styles.bankSelectRadio}>
+                      {isSelected ? <View style={styles.bankSelectRadioInner} /> : null}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bankSelectName}>{acc.bankName || 'Bank Account'}</Text>
+                      <Text style={styles.bankSelectNum}>•••• •••• •••• {last4} ({acc.ifscCode})</Text>
+                    </View>
+                    {acc.isPrimary ? (
+                      <Badge label="Primary" variant="success" size="small" />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+
+              <TouchableOpacity
+                style={styles.manageBanksLink}
+                onPress={() => {
+                  setShowWithdrawSheet(false);
+                  navigation.navigate('ManageBankAccounts');
+                }}
+              >
+                <Text style={styles.manageBanksLinkText}>+ Manage or Add Another Account →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Amount Input */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.m }}>
+            <Text style={styles.sheetLabel}>Withdrawal Amount (₹)</Text>
+            {wallet?.balance > 0 ? (
+              <TouchableOpacity
+                onPress={() => {
+                  setWithdrawAmount(String(wallet.balance));
+                  if (withdrawError) setWithdrawError('');
+                }}
+              >
+                <Text style={styles.withdrawMaxText}>Withdraw All (₹{wallet.balance})</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <TextInput
+            style={styles.sheetInput}
+            keyboardType="numeric"
+            value={withdrawAmount}
+            onChangeText={(t) => {
+              setWithdrawAmount(t);
+              if (withdrawError) setWithdrawError('');
+            }}
+            placeholder={`Min ₹${wallet?.minWithdrawAmount || 100}`}
+          />
+
+          <Button
+            title={isSubmittingWithdrawal ? 'Submitting Request...' : 'Submit Withdrawal Request →'}
+            onPress={handleExecuteWithdrawal}
+            loading={isSubmittingWithdrawal}
+            disabled={isSubmittingWithdrawal || bankAccounts.length === 0}
+            variant="primary"
+            style={{ marginTop: spacing.l, marginBottom: spacing.m }}
+          />
+        </ScrollView>
       </BottomSheet>
 
       {/* Razorpay Checkout for Wallet Top-up */}
@@ -524,6 +721,152 @@ const styles = StyleSheet.create({
   withdrawBtnText: {
     ...typography.button,
     color: colors.white,
+  },
+  bankBtn: {
+    flex: 1.1,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    paddingVertical: 12,
+    borderRadius: radii.m,
+    alignItems: 'center',
+  },
+  bankBtnText: {
+    ...typography.button,
+    color: colors.white,
+    fontSize: 13,
+  },
+  withdrawErrorBox: {
+    backgroundColor: '#fef2f2',
+    borderLeftWidth: 4,
+    borderLeftColor: colors.danger,
+    padding: spacing.s,
+    borderRadius: radii.s,
+    marginBottom: spacing.m,
+  },
+  withdrawErrorText: {
+    ...typography.caption,
+    color: colors.danger,
+    fontWeight: '600',
+  },
+  withdrawSummaryRow: {
+    flexDirection: 'row',
+    gap: spacing.s,
+    backgroundColor: colors.gray100,
+    padding: spacing.m,
+    borderRadius: radii.m,
+    marginBottom: spacing.s,
+  },
+  withdrawSummaryCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  withdrawSummaryLabel: {
+    ...typography.caption,
+    color: colors.gray500,
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  withdrawSummaryValue: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  noBankCard: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fef3c7',
+    padding: spacing.m,
+    marginVertical: spacing.s,
+  },
+  noBankTitle: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  noBankText: {
+    ...typography.caption,
+    color: colors.gray600,
+    lineHeight: 16,
+    marginBottom: spacing.m,
+  },
+  linkBankBtn: {
+    backgroundColor: colors.teal,
+    paddingVertical: 8,
+    borderRadius: radii.s,
+    alignItems: 'center',
+  },
+  linkBankBtnText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  bankSelectGroup: {
+    gap: spacing.s,
+    marginVertical: spacing.s,
+  },
+  bankSelectCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.m,
+    borderRadius: radii.m,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.white,
+  },
+  bankSelectCardActive: {
+    borderColor: colors.teal,
+    backgroundColor: '#f0fcfc',
+  },
+  bankSelectRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.teal,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.m,
+  },
+  bankSelectRadioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.teal,
+  },
+  bankSelectName: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  bankSelectNum: {
+    ...typography.caption,
+    color: colors.gray500,
+    fontFamily: 'monospace',
+    marginTop: 2,
+  },
+  manageBanksLink: {
+    paddingVertical: 4,
+    alignItems: 'center',
+  },
+  manageBanksLinkText: {
+    ...typography.caption,
+    color: colors.teal,
+    fontWeight: '700',
+  },
+  withdrawMaxText: {
+    ...typography.caption,
+    color: colors.teal,
+    fontWeight: '700',
+  },
+  emptyInlineBox: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  emptyInlineText: {
+    ...typography.caption,
+    color: colors.gray500,
   },
   safetyCard: {
     backgroundColor: colors.tealMist,

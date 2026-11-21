@@ -9,6 +9,7 @@ import {
   Platform,
   StatusBar,
   Alert,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
@@ -31,9 +32,15 @@ export default function RegisterScreen({ navigation }) {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [dpdpConsent, setDpdpConsent] = useState(true);
+
+  // DPDP Act 2023 & DPDP Rules 2025: Granular, Unbundled Checkboxes (Unchecked by default)
+  const [isAdult, setIsAdult] = useState(false); // Mandatory
+  const [privacyConsent, setPrivacyConsent] = useState(false); // Mandatory
+  const [promotionalMarketing, setPromotionalMarketing] = useState(false); // Optional
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [modalType, setModalType] = useState(null); // 'privacy' | 'terms' | null
 
   const handleGoogleSuccess = (user) => {
     // Navigation is automatic via AuthContext state change in RootNavigator
@@ -45,18 +52,25 @@ export default function RegisterScreen({ navigation }) {
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPhone = phone.trim();
 
-    if (!trimmedName) {
-      setErrorMessage('Please enter your full name.');
+    if (!trimmedName || trimmedName.length < 2) {
+      setErrorMessage('Please enter your full name (at least 2 characters).');
       return;
     }
-    if (!trimmedEmail) {
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setErrorMessage('Please enter a valid email address.');
       return;
     }
-    if (!trimmedPhone || trimmedPhone.length < 10) {
-      setErrorMessage('Please enter a valid 10-digit mobile number.');
+
+    // Backend route validation: body("phone").optional().matches(/^[6-9]\d{9}$/)
+    let cleanPhone = trimmedPhone.replace(/\D/g, '');
+    if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
+      cleanPhone = cleanPhone.slice(-10);
+    }
+    if (trimmedPhone && (!/^[6-9]\d{9}$/.test(cleanPhone) || cleanPhone.length !== 10)) {
+      setErrorMessage('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
       return;
     }
+
     if (!password || password.length < 6) {
       setErrorMessage('Password must be at least 6 characters.');
       return;
@@ -65,8 +79,16 @@ export default function RegisterScreen({ navigation }) {
       setErrorMessage('Passwords do not match.');
       return;
     }
-    if (!dpdpConsent) {
-      setErrorMessage('Please agree to personal data processing under the DPDP Act 2023.');
+
+    // Mandatory DPDP Checkbox 1: Age Affirmation
+    if (!isAdult) {
+      setErrorMessage('You must confirm you are 18 years of age or older, or traveling under legal guardian supervision.');
+      return;
+    }
+
+    // Mandatory DPDP Checkbox 2: Privacy Notice & Terms Consent
+    if (!privacyConsent) {
+      setErrorMessage('You must agree to the JalRide Privacy Notice and Terms of Service to register.');
       return;
     }
 
@@ -75,19 +97,30 @@ export default function RegisterScreen({ navigation }) {
       const payload = {
         name: trimmedName,
         email: trimmedEmail,
-        phone: trimmedPhone.startsWith('+91') ? trimmedPhone : `+91 ${trimmedPhone}`,
         password,
-        role,
+        role: role === 'owner' ? 'owner' : 'customer',
+        privacyConsent: true,
+        isAdult: true,
+        promotionalMarketing: Boolean(promotionalMarketing),
       };
 
+      if (cleanPhone) {
+        payload.phone = cleanPhone;
+      }
+
       const result = await register(payload);
-      if (result.success) {
+      if (result && result.success) {
         Alert.alert(
           'Account Created! 📨',
-          result.message || 'Please enter the 6-digit OTP verification code sent to your email to activate your account.',
+          result.message ||
+            'A verification link has been sent to your email address (valid for 24 hours). Please click the link in your email to verify your account before logging in.',
           [
             {
-              text: 'Enter Verification Code',
+              text: 'Go to Login',
+              onPress: () => navigation.navigate('Login'),
+            },
+            {
+              text: 'Enter Verification Token',
               onPress: () =>
                 navigation.navigate('OtpVerification', {
                   email: trimmedEmail,
@@ -97,7 +130,7 @@ export default function RegisterScreen({ navigation }) {
           ]
         );
       } else {
-        setErrorMessage(result.message || 'Registration could not be completed.');
+        setErrorMessage(result?.message || 'Registration could not be completed.');
       }
     } catch (err) {
       setErrorMessage(err.message || 'Unable to connect to JalRide registration service.');
@@ -123,6 +156,7 @@ export default function RegisterScreen({ navigation }) {
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
+            disabled={isSubmitting}
           >
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
@@ -144,7 +178,8 @@ export default function RegisterScreen({ navigation }) {
               styles.roleTab,
               role === 'customer' && styles.roleTabActive,
             ]}
-            onPress={() => setRole('customer')}
+            onPress={() => !isSubmitting && setRole('customer')}
+            disabled={isSubmitting}
           >
             <Text style={styles.roleTabEmoji}>🛶</Text>
             <Text
@@ -162,7 +197,8 @@ export default function RegisterScreen({ navigation }) {
               styles.roleTab,
               role === 'owner' && styles.roleTabActive,
             ]}
-            onPress={() => setRole('owner')}
+            onPress={() => !isSubmitting && setRole('owner')}
+            disabled={isSubmitting}
           >
             <Text style={styles.roleTabEmoji}>⚓</Text>
             <Text
@@ -224,7 +260,7 @@ export default function RegisterScreen({ navigation }) {
 
           <Input
             label="Mobile Number (10 Digits)"
-            placeholder="98765 43210"
+            placeholder="9876543210"
             keyboardType="phone-pad"
             value={phone}
             onChangeText={(t) => {
@@ -255,23 +291,84 @@ export default function RegisterScreen({ navigation }) {
             }}
           />
 
-          <TouchableOpacity
-            style={styles.dpdpRow}
-            onPress={() => setDpdpConsent(!dpdpConsent)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.dpdpBox, dpdpConsent && styles.dpdpBoxActive]}>
-              {dpdpConsent && <Text style={styles.dpdpCheck}>✓</Text>}
+          {role === 'owner' ? (
+            <View style={styles.ownerNoticeBox}>
+              <Text style={styles.ownerNoticeText}>
+                ⚓ Boat-owner accounts can register immediately. New vessel listings require administrative fitness clearance before becoming bookable on Varanasi ghats.
+              </Text>
             </View>
-            <Text style={[styles.dpdpText, isDark && styles.textMutedDark]}>
-              I consent to personal data collection & processing under the Digital Personal Data Protection (DPDP) Act 2023 for water transit & booking dispatch.
-            </Text>
-          </TouchableOpacity>
+          ) : null}
+
+          {/* DPDP Act 2023 & DPDP Rules 2025: Unbundled Affirmative Consents */}
+          <View style={styles.consentGroup}>
+            {/* Mandatory Checkbox 1: Age Affirmation */}
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => {
+                setIsAdult(!isAdult);
+                if (errorMessage) setErrorMessage('');
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.checkboxBox, isAdult && styles.checkboxBoxActive]}>
+                {isAdult && <Text style={styles.checkboxCheck}>✓</Text>}
+              </View>
+              <Text style={[styles.checkboxText, isDark && styles.textMutedDark]}>
+                I confirm I am 18 years of age or older, or traveling under legal guardian supervision. <Text style={styles.requiredStar}>*</Text>
+              </Text>
+            </TouchableOpacity>
+
+            {/* Mandatory Checkbox 2: Privacy Consent & Terms */}
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => {
+                setPrivacyConsent(!privacyConsent);
+                if (errorMessage) setErrorMessage('');
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.checkboxBox, privacyConsent && styles.checkboxBoxActive]}>
+                {privacyConsent && <Text style={styles.checkboxCheck}>✓</Text>}
+              </View>
+              <Text style={[styles.checkboxText, isDark && styles.textMutedDark]}>
+                I have read and agree to the{' '}
+                <Text
+                  style={styles.linkText}
+                  onPress={() => setModalType('privacy')}
+                >
+                  JalRide Privacy Notice
+                </Text>{' '}
+                and{' '}
+                <Text
+                  style={styles.linkText}
+                  onPress={() => setModalType('terms')}
+                >
+                  Terms of Service
+                </Text>
+                . <Text style={styles.requiredStar}>*</Text>
+              </Text>
+            </TouchableOpacity>
+
+            {/* Optional Checkbox 3: Promotional Consent */}
+            <TouchableOpacity
+              style={[styles.checkboxRow, styles.optionalCheckboxRow]}
+              onPress={() => setPromotionalMarketing(!promotionalMarketing)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.checkboxBox, promotionalMarketing && styles.checkboxBoxActive]}>
+                {promotionalMarketing && <Text style={styles.checkboxCheck}>✓</Text>}
+              </View>
+              <Text style={[styles.checkboxText, isDark && styles.textMutedDark]}>
+                <Text style={{ fontWeight: '700' }}>(Optional)</Text> I agree to receive promotional updates and special offers via WhatsApp/SMS.
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           <Button
             title={`Register as ${role === 'owner' ? 'Boat Owner' : 'Rider'} ➔`}
             onPress={handleRegister}
             loading={isSubmitting}
+            disabled={isSubmitting}
             variant="primary"
             style={styles.submitBtn}
           />
@@ -285,11 +382,116 @@ export default function RegisterScreen({ navigation }) {
           <TouchableOpacity
             onPress={() => navigation.navigate('Login')}
             style={styles.loginLink}
+            disabled={isSubmitting}
           >
             <Text style={styles.loginLinkText}>Sign In</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Notice & Terms Native Modal */}
+      <Modal
+        visible={modalType !== null}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setModalType(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalContent, isDark && styles.modalContentDark]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, isDark && styles.textLight]}>
+                {modalType === 'privacy' ? '🛡️ JalRide Privacy Notice' : '📜 Terms of Service'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setModalType(null)}
+                style={styles.closeBtn}
+              >
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              {modalType === 'privacy' ? (
+                <View style={styles.modalBody}>
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    1. Data Fiduciary & Legal Framework
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    JalRide operates as a compliant Data Fiduciary under India's Digital Personal Data Protection Act, 2023 (DPDP Act) and DPDP Rules, 2025.
+                  </Text>
+
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    2. Categories of Personal Data Collected
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    • Full name and telephone number for passenger manifests and Ghat boarding coordination.
+                    • Email address for e-ticket delivery, digital boarding passes, and GST tax invoice receipts.
+                    • Tokenized payment references (raw card details or UPI PINs are never handled by JalRide).
+                  </Text>
+
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    3. Purposes of Processing & Lawful Basis
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    Processing relies on your affirmative consent and contract fulfillment for safe waterway transit, boarding QR passes, and river emergency response under Inland Vessels regulations.
+                  </Text>
+
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    4. Statutory 7-Year Tax Retention
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    Financial booking ledgers and GST tax invoices are retained for a mandatory 7 years under Indian tax accounting laws (Section 12(3) DPDP Act exception).
+                  </Text>
+
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    5. Grievance Officer & Contact
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    For privacy inquiries or grievance redressal, contact our designated Grievance Officer at support@jalride.com. Statutory turnaround: 48h acknowledgement, 15 days resolution.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.modalBody}>
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    1. Passenger Safety & Ghat Boarding
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    All passengers must arrive at the assigned boarding ghat at least 15 minutes before the scheduled departure slot. Life jackets provided on certified vessels must be worn during river transit.
+                  </Text>
+
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    2. QR Boarding Pass Validity
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    Each booking generates a digital boarding pass with a unique QR code. The boat captain verifies the pass at boarding. Boarding passes are non-transferable.
+                  </Text>
+
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    3. Cancellation & Refund Policy
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    Rides cancelled prior to departure qualify for a 100% wallet escrow refund. Instant refunds are credited to your JalRide wallet. Weather cancellations by port authorities are fully refunded.
+                  </Text>
+
+                  <Text style={[styles.modalHeading, isDark && styles.textLight]}>
+                    4. Cash on Ride Protocol
+                  </Text>
+                  <Text style={styles.modalParagraph}>
+                    For Cash on Ride bookings, the exact fare must be paid to the boat captain prior to vessel departure. Platform commission is handled directly between JalRide and the boat operator.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <Button
+              title="Close and Return to Registration"
+              onPress={() => setModalType(null)}
+              variant="primary"
+              style={{ marginTop: spacing.m }}
+            />
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -402,12 +604,37 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: '600',
   },
-  dpdpRow: {
+  ownerNoticeBox: {
+    backgroundColor: colors.tealMist,
+    padding: 12,
+    borderRadius: radii.m,
+    marginBottom: spacing.m,
+  },
+  ownerNoticeText: {
+    ...typography.caption,
+    color: colors.teal,
+    lineHeight: 18,
+  },
+  consentGroup: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: colors.gray200,
+    borderRadius: radii.m,
+    padding: spacing.m,
+    marginVertical: spacing.m,
+    gap: 12,
+  },
+  checkboxRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginVertical: spacing.m,
   },
-  dpdpBox: {
+  optionalCheckboxRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.gray200,
+    paddingTop: 10,
+    marginTop: 2,
+  },
+  checkboxBox: {
     width: 20,
     height: 20,
     borderRadius: 4,
@@ -419,20 +646,29 @@ const styles = StyleSheet.create({
     marginTop: 2,
     backgroundColor: colors.white,
   },
-  dpdpBoxActive: {
+  checkboxBoxActive: {
     backgroundColor: colors.teal,
     borderColor: colors.teal,
   },
-  dpdpCheck: {
+  checkboxCheck: {
     color: colors.white,
     fontSize: 12,
     fontWeight: '800',
   },
-  dpdpText: {
+  checkboxText: {
     flex: 1,
     ...typography.caption,
-    color: colors.gray600,
-    lineHeight: 16,
+    color: colors.gray700,
+    lineHeight: 18,
+  },
+  requiredStar: {
+    color: colors.danger,
+    fontWeight: '700',
+  },
+  linkText: {
+    color: colors.teal,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   submitBtn: {
     marginTop: spacing.m,
@@ -461,5 +697,56 @@ const styles = StyleSheet.create({
   },
   textMutedDark: {
     color: colors.textMutedDark,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: radii.l,
+    borderTopRightRadius: radii.l,
+    padding: spacing.xl,
+    paddingBottom: 36,
+  },
+  modalContentDark: {
+    backgroundColor: colors.canvasDark,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.m,
+  },
+  modalTitle: {
+    ...typography.h3,
+    color: colors.ink,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.gray100,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeBtnText: {
+    fontSize: 14,
+    color: colors.gray600,
+    fontWeight: '700',
+  },
+  modalBody: {
+    gap: 12,
+  },
+  modalHeading: {
+    ...typography.bodySemiBold,
+    color: colors.ink,
+    marginTop: 6,
+  },
+  modalParagraph: {
+    ...typography.caption,
+    color: colors.gray700,
+    lineHeight: 18,
   },
 });

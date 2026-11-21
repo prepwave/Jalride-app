@@ -159,8 +159,24 @@ export default function BookingWizardScreen({ navigation, route }) {
         return;
       }
 
+      const requestOrderWithRetry = async (bookingId, useWallet) => {
+        try {
+          return await api.createPaymentOrder(bookingId, useWallet);
+        } catch (orderErr) {
+          if (
+            orderErr?.message &&
+            (orderErr.message.includes('already active') ||
+              orderErr.message.includes('409') ||
+              orderErr.message.includes('existing payment'))
+          ) {
+            return await api.retryPaymentOrder(bookingId);
+          }
+          throw orderErr;
+        }
+      };
+
       if (paymentMethod === 'wallet') {
-        const orderRes = await api.createPaymentOrder(createdBooking._id, true);
+        const orderRes = await requestOrderWithRetry(createdBooking._id, true);
         if (orderRes.fullyPaidFromWallet) {
           setCompletedBooking(orderRes.booking || createdBooking);
           setStep(7);
@@ -178,7 +194,7 @@ export default function BookingWizardScreen({ navigation, route }) {
       }
 
       // Online payment via Razorpay (UPI, Card, Net Banking)
-      const orderRes = await api.createPaymentOrder(createdBooking._id, false);
+      const orderRes = await requestOrderWithRetry(createdBooking._id, false);
       if (orderRes && orderRes.order) {
         setActivePaymentOrder(orderRes);
         setShowRazorpayModal(true);

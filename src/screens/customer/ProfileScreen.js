@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Switch,
   Alert,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
@@ -15,10 +16,28 @@ import { useTheme } from '../../context/ThemeContext';
 import Header from '../../components/common/Header';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
+import api from '../../services/api';
 
 export default function ProfileScreen({ navigation }) {
   const { user, activeRole, switchRole, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+  const [isResending, setIsResending] = useState(false);
+
+  const handleResendVerification = async () => {
+    if (!user?.email) return;
+    setIsResending(true);
+    try {
+      const res = await api.resendVerification(user.email);
+      Alert.alert(
+        'Verification Link Sent 📨',
+        res.message || 'Please check your email inbox or spam folder for the verification link (valid for 24 hours).'
+      );
+    } catch (err) {
+      Alert.alert('Resend Failed', err.message || 'Could not send verification email. Please try again later.');
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const handleRoleChange = (role) => {
     switchRole(role);
@@ -62,12 +81,40 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.userEmail}>{user?.email || ''}</Text>
             <View style={styles.badgeRow}>
               <Badge label={`Role: ${activeRole}`} variant="teal" size="small" />
-              {user?.isEmailVerified && (
-                <Badge label="Verified Email" variant="success" size="small" style={{ marginLeft: 6 }} />
+              {user?.isEmailVerified ? (
+                <Badge label="✓ Verified Email" variant="success" size="small" style={{ marginLeft: 6 }} />
+              ) : (
+                <Badge label="⚠️ Unverified" variant="warning" size="small" style={{ marginLeft: 6 }} />
               )}
             </View>
           </View>
         </Card>
+
+        {/* Email Verification Pending Banner */}
+        {!user?.isEmailVerified && (
+          <Card style={styles.verificationCard}>
+            <View style={styles.verificationRow}>
+              <Text style={styles.verificationIcon}>⚠️</Text>
+              <View style={{ flex: 1, marginLeft: spacing.s }}>
+                <Text style={styles.verificationTitle}>Email Verification Pending</Text>
+                <Text style={styles.verificationSub}>
+                  A verification link was sent to {user?.email || 'your email'}. Check your inbox to activate your account.
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.resendBtn}
+              onPress={handleResendVerification}
+              disabled={isResending}
+            >
+              {isResending ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Text style={styles.resendBtnText}>Resend Verification Link</Text>
+              )}
+            </TouchableOpacity>
+          </Card>
+        )}
 
         {/* ROLE SWITCHER SECTION (Only if user has elevated permissions) */}
         {(user?.role === 'admin' || user?.role === 'owner') && (
@@ -151,29 +198,124 @@ export default function ProfileScreen({ navigation }) {
 
           <View style={styles.settingDivider} />
 
-          <TouchableOpacity
-            style={styles.settingRow}
-            onPress={() => navigation.navigate('Wallet')}
-          >
-            <View>
-              <Text style={[styles.settingLabel, isDark && styles.textLight]}>JalRide Wallet & Cards</Text>
-              <Text style={styles.settingSub}>Manage bank accounts and top-up cards</Text>
-            </View>
-            <Text style={styles.arrowIcon}>→</Text>
-          </TouchableOpacity>
+          {activeRole === 'owner' ? (
+            <>
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('OwnerWallet')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>Fleet Earnings & Payouts</Text>
+                  <Text style={styles.settingSub}>Escrow balance, net revenue & withdrawals</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
 
-          <View style={styles.settingDivider} />
+              <View style={styles.settingDivider} />
 
-          <TouchableOpacity
-            style={styles.settingRow}
-            onPress={() => navigation.navigate('Notifications')}
-          >
-            <View>
-              <Text style={[styles.settingLabel, isDark && styles.textLight]}>Notifications</Text>
-              <Text style={styles.settingSub}>Booking updates, Aarti schedules</Text>
-            </View>
-            <Text style={styles.arrowIcon}>→</Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('ManageBankAccounts')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>Saved Bank Accounts</Text>
+                  <Text style={styles.settingSub}>Direct bank payout accounts for boat earnings</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('OwnerQrPosters')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>Vessel QR Code Posters</Text>
+                  <Text style={styles.settingSub}>Printable Ghat QR codes for instant direct booking</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('OwnerKyc')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>Fleet KYC & Verification</Text>
+                  <Text style={styles.settingSub}>License, safety certificates & boat registration</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('Notifications')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>Notifications</Text>
+                  <Text style={styles.settingSub}>Ghat booking dispatches & settlement alerts</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('Wallet')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>JalRide Wallet & Top-Up</Text>
+                  <Text style={styles.settingSub}>Balance, instant refunds & top-ups</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('MyRides')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>My Passes & Ride History</Text>
+                  <Text style={styles.settingSub}>Upcoming journeys, confirmed passes & receipts</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('ManageBankAccounts')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>Saved Bank Accounts</Text>
+                  <Text style={styles.settingSub}>Payout accounts for wallet withdrawal refunds</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => navigation.navigate('Notifications')}
+              >
+                <View>
+                  <Text style={[styles.settingLabel, isDark && styles.textLight]}>Notifications</Text>
+                  <Text style={styles.settingSub}>Booking updates, Aarti schedules</Text>
+                </View>
+                <Text style={styles.arrowIcon}>→</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </Card>
 
         {/* Trust, Security & DPDP Compliance */}
@@ -341,5 +483,45 @@ const styles = StyleSheet.create({
   logoutText: {
     ...typography.button,
     color: colors.danger,
+  },
+  verificationCard: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fef3c7',
+    borderWidth: 1,
+    padding: spacing.m,
+    marginBottom: spacing.l,
+    borderRadius: radii.m,
+  },
+  verificationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  verificationIcon: {
+    fontSize: 22,
+    marginTop: 2,
+  },
+  verificationTitle: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  verificationSub: {
+    ...typography.caption,
+    color: '#b45309',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  resendBtn: {
+    backgroundColor: colors.teal,
+    borderRadius: radii.s,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: spacing.s,
+    alignSelf: 'flex-start',
+  },
+  resendBtnText: {
+    ...typography.caption,
+    color: colors.white,
+    fontWeight: '700',
   },
 });

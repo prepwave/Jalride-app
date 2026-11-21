@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   StatusBar,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
@@ -20,11 +21,13 @@ import Button from '../../components/common/Button';
 export default function AdminSettingsScreen({ navigation }) {
   const { isDark } = useTheme();
 
-  const [onlineCommissionRate, setOnlineCommissionRate] = useState('10');
-  const [cashCommissionRate, setCashCommissionRate] = useState('12');
-  const [gstRate, setGstRate] = useState('18');
-  const [cashbackPercent, setCashbackPercent] = useState('10');
-  const [holdDays, setHoldDays] = useState('3');
+  const [onlineCommissionRate, setOnlineCommissionRate] = useState('');
+  const [cashCommissionRate, setCashCommissionRate] = useState('');
+  const [gstRate, setGstRate] = useState('');
+  const [cashbackPercent, setCashbackPercent] = useState('');
+  const [holdDays, setHoldDays] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const [coupons, setCoupons] = useState([]);
@@ -35,21 +38,53 @@ export default function AdminSettingsScreen({ navigation }) {
     api.getAdminCoupons().then((c) => setCoupons(c || [])).catch(() => setCoupons([]));
   };
 
-  useEffect(() => {
-    api.getPlatformSettings().then((s) => {
-      if (s) {
-        setOnlineCommissionRate(String(s.onlineCommissionRate ?? s.defaultCommissionRate ?? 10));
-        setCashCommissionRate(String(s.cashCommissionRate ?? s.defaultCommissionRate ?? 12));
-        setGstRate(String(s.commissionGstRate ?? 18));
-        setCashbackPercent(String(s.cashbackPercent ?? 10));
-        setHoldDays(String(s.payoutHoldDays ?? s.settlementHoldDays ?? 3));
+  const loadSettings = async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const s = await api.getPlatformSettings();
+      if (!s || (s.onlineCommissionRate === undefined && s.defaultCommissionRate === undefined)) {
+        setLoadError('Unable to load authoritative platform configuration from server.');
+        return;
       }
-    });
+      setOnlineCommissionRate(
+        s.onlineCommissionRate !== undefined ? String(s.onlineCommissionRate) :
+        s.defaultCommissionRate !== undefined ? String(s.defaultCommissionRate) : ''
+      );
+      setCashCommissionRate(
+        s.cashCommissionRate !== undefined ? String(s.cashCommissionRate) :
+        s.defaultCommissionRate !== undefined ? String(s.defaultCommissionRate) : ''
+      );
+      setGstRate(s.commissionGstRate !== undefined ? String(s.commissionGstRate) : '');
+      setCashbackPercent(s.cashbackPercent !== undefined ? String(s.cashbackPercent) : '');
+      setHoldDays(
+        s.payoutHoldDays !== undefined ? String(s.payoutHoldDays) :
+        s.settlementHoldDays !== undefined ? String(s.settlementHoldDays) : ''
+      );
+    } catch (err) {
+      setLoadError(err?.message || 'Failed to fetch platform configuration from server.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
+    loadSettings();
     loadCoupons();
   }, []);
 
   const handleSaveSettings = async () => {
+    if (isLoading || loadError) return;
+    if (
+      !onlineCommissionRate.trim() ||
+      !cashCommissionRate.trim() ||
+      isNaN(parseFloat(onlineCommissionRate)) ||
+      isNaN(parseFloat(cashCommissionRate))
+    ) {
+      Alert.alert('Validation Error', 'Please enter valid numerical commission rates before saving.');
+      return;
+    }
+
     setIsSaving(true);
     try {
       // Production invariant: Separate cash on ride vs online payment commission rates
@@ -57,13 +92,13 @@ export default function AdminSettingsScreen({ navigation }) {
         defaultCommissionRate: parseFloat(onlineCommissionRate),
         onlineCommissionRate: parseFloat(onlineCommissionRate),
         cashCommissionRate: parseFloat(cashCommissionRate),
-        commissionGstRate: parseFloat(gstRate),
-        cashbackPercent: parseFloat(cashbackPercent),
-        payoutHoldDays: parseInt(holdDays),
+        commissionGstRate: gstRate.trim() ? parseFloat(gstRate) : 0,
+        cashbackPercent: cashbackPercent.trim() ? parseFloat(cashbackPercent) : 0,
+        payoutHoldDays: holdDays.trim() ? parseInt(holdDays, 10) : 0,
       });
-      Alert.alert('Settings Updated', 'Platform commission rules updated (separate cash and online rates applied).');
+      Alert.alert('Settings Updated', 'Platform commission rules updated successfully.');
     } catch (e) {
-      Alert.alert('Settings Saved', 'Platform rates and commission configuration updated successfully.');
+      Alert.alert('Update Failed', e.message || 'Unable to update platform settings on server.');
     } finally {
       setIsSaving(false);
     }
@@ -100,74 +135,120 @@ export default function AdminSettingsScreen({ navigation }) {
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Quick Link to Dedicated Commission & Financial Governance */}
+        <TouchableOpacity
+          style={{
+            backgroundColor: '#0c272e',
+            borderRadius: radii.m,
+            padding: spacing.m,
+            marginBottom: spacing.m,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderWidth: 1,
+            borderColor: colors.sun,
+          }}
+          onPress={() => navigation.navigate('AdminCommissionSettings')}
+        >
+          <View style={{ flex: 1, marginRight: spacing.s }}>
+            <Text style={{ ...typography.bodyMedium, fontWeight: '700', color: colors.white }}>
+              ⚖️ Commission & Financial Settings Console
+            </Text>
+            <Text style={{ ...typography.caption, color: colors.tealLight, marginTop: 2 }}>
+              Dedicated portal for live rates, GST toggle, hold period, target comparison & per-owner overrides
+            </Text>
+          </View>
+          <Text style={{ fontSize: 18, color: colors.sun }}>→</Text>
+        </TouchableOpacity>
+
         {/* Commission Engine Settings */}
         <Text style={[styles.sectionTitle, isDark && styles.textLight]}>
           Financial Split & Commission Engine
         </Text>
 
-        <Card style={styles.formCard}>
-          <Text style={styles.inputLabel}>Online Payment Commission Rate (%)</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="numeric"
-            value={onlineCommissionRate}
-            onChangeText={setOnlineCommissionRate}
-          />
-          <Text style={styles.inputHelp}>
-            Percentage retained on Razorpay, UPI, Card and digital wallet bookings (Default: 10%).
-          </Text>
+        {isLoading ? (
+          <Card style={styles.loadingCard}>
+            <ActivityIndicator size="large" color={colors.teal} />
+            <Text style={styles.loadingText}>Loading authoritative platform settings...</Text>
+          </Card>
+        ) : loadError ? (
+          <Card style={styles.errorCard}>
+            <Text style={styles.errorTitle}>⚠️ Configuration Unavailable</Text>
+            <Text style={styles.errorSub}>{loadError}</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={loadSettings}>
+              <Text style={styles.retryBtnText}>↻ Retry Fetching Settings</Text>
+            </TouchableOpacity>
+          </Card>
+        ) : (
+          <Card style={styles.formCard}>
+            <Text style={styles.inputLabel}>Online Payment Commission Rate (%)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={onlineCommissionRate}
+              onChangeText={setOnlineCommissionRate}
+              placeholder="e.g. 2"
+            />
+            <Text style={styles.inputHelp}>
+              Percentage retained on digital bookings (Razorpay, UPI, Card, Net Banking).
+            </Text>
 
-          <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Cash-on-Ride Commission Rate (%)</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="numeric"
-            value={cashCommissionRate}
-            onChangeText={setCashCommissionRate}
-          />
-          <Text style={styles.inputHelp}>
-            Percentage due from owner for cash collected directly on ghat boarding (Default: 12%).
-          </Text>
+            <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Cash-on-Ride Commission Rate (%)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={cashCommissionRate}
+              onChangeText={setCashCommissionRate}
+              placeholder="e.g. 2"
+            />
+            <Text style={styles.inputHelp}>
+              Percentage due from owner for cash collected directly on ghat boarding.
+            </Text>
 
-          <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Commission GST Rate (%)</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="numeric"
-            value={gstRate}
-            onChangeText={setGstRate}
-          />
-          <Text style={styles.inputHelp}>
-            Govt GST applied solely to the platform commission portion (18%).
-          </Text>
+            <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Commission GST Rate (%)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={gstRate}
+              onChangeText={setGstRate}
+              placeholder="e.g. 18"
+            />
+            <Text style={styles.inputHelp}>
+              Govt GST applied to the platform commission portion when GST is enabled.
+            </Text>
 
-          <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Cashback Subsidy Rate (%)</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="numeric"
-            value={cashbackPercent}
-            onChangeText={setCashbackPercent}
-          />
-          <Text style={styles.inputHelp}>
-            Cashback promo credited to customer wallet, funded 100% from Admin Wallet pool.
-          </Text>
+            <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Cashback Subsidy Rate (%)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={cashbackPercent}
+              onChangeText={setCashbackPercent}
+              placeholder="e.g. 0"
+            />
+            <Text style={styles.inputHelp}>
+              Cashback percentage credited to customer wallet upon ride payment.
+            </Text>
 
-          <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Settlement Hold Period (Days)</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="numeric"
-            value={holdDays}
-            onChangeText={setHoldDays}
-          />
-          <Text style={styles.inputHelp}>
-            Days before boat owner earnings transition from Pending to Available.
-          </Text>
+            <Text style={[styles.inputLabel, { marginTop: spacing.m }]}>Settlement Hold Period (Days)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={holdDays}
+              onChangeText={setHoldDays}
+              placeholder="e.g. 2"
+            />
+            <Text style={styles.inputHelp}>
+              Days before boat owner earnings transition from Pending to Available.
+            </Text>
 
-          <Button
-            title="Save Financial Rules"
-            onPress={handleSaveSettings}
-            loading={isSaving}
-            style={{ marginTop: spacing.xl }}
-          />
-        </Card>
+            <Button
+              title="Save Financial Rules"
+              onPress={handleSaveSettings}
+              loading={isSaving}
+              style={{ marginTop: spacing.xl }}
+            />
+          </Card>
+        )}
 
         {/* Promo Coupons Manager */}
         <Text style={[styles.sectionTitle, isDark && styles.textLight]}>
@@ -306,5 +387,45 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.gray600,
     marginTop: 2,
+  },
+  loadingCard: {
+    padding: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.l,
+  },
+  loadingText: {
+    ...typography.bodyMedium,
+    color: colors.gray600,
+    marginTop: spacing.m,
+  },
+  errorCard: {
+    backgroundColor: '#fff5f5',
+    borderColor: colors.coral,
+    borderWidth: 1.5,
+    padding: spacing.l,
+    marginBottom: spacing.l,
+  },
+  errorTitle: {
+    ...typography.h3,
+    color: colors.coral,
+    marginBottom: spacing.s,
+  },
+  errorSub: {
+    ...typography.bodyMedium,
+    color: colors.gray700,
+    marginBottom: spacing.m,
+    lineHeight: 20,
+  },
+  retryBtn: {
+    backgroundColor: colors.teal,
+    paddingVertical: spacing.s,
+    paddingHorizontal: spacing.m,
+    borderRadius: radii.m,
+    alignSelf: 'flex-start',
+  },
+  retryBtnText: {
+    ...typography.button,
+    color: colors.white,
   },
 });

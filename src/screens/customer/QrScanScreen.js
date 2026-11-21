@@ -14,14 +14,17 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import Header from '../../components/common/Header';
 import Button from '../../components/common/Button';
 import BottomSheet from '../../components/common/BottomSheet';
 import Badge from '../../components/common/Badge';
+import RazorpayCheckoutModal from '../../components/payment/RazorpayCheckoutModal';
 
 export default function QrScanScreen({ navigation }) {
   const { isDark } = useTheme();
+  const { user } = useAuth();
   const [torchOn, setTorchOn] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanningActive, setIsScanningActive] = useState(true);
@@ -38,6 +41,23 @@ export default function QrScanScreen({ navigation }) {
   const [walkinPayment, setWalkinPayment] = useState('cash'); // 'cash' | 'upi'
   const [isBooking, setIsBooking] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+
+  // Online Razorpay Payment States for Instant QR Walk-ins
+  const [showRazorpayModal, setShowRazorpayModal] = useState(false);
+  const [activePaymentOrder, setActivePaymentOrder] = useState(null);
+  const [activeQrBooking, setActiveQrBooking] = useState(null);
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+  const isVerifyingPaymentRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const retainedSignatureRef = useRef(null);
+  const retainedBookingContextRef = useRef(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     isScanningActiveRef.current = isScanningActive;
@@ -110,24 +130,59 @@ export default function QrScanScreen({ navigation }) {
       }
 
       // 2. Check if scanned barcode is a Boarding Point Standee QR (instant walk-in)
-      let boatId = 'boat-001';
-      if (data.includes('boatId=')) {
-        const match = data.match(/boatId=([^&]+)/);
-        if (match && match[1]) boatId = match[1];
-      } else if (data.includes('boat-') || data.includes('6')) {
-        boatId = data.trim();
+      let boatId = null;
+      const trimmed = (data || '').trim();
+      if (trimmed.includes('boat=')) {
+        const m = trimmed.match(/[?&]boat=([^&#]+)/i);
+        if (m && m[1]) boatId = decodeURIComponent(m[1]);
+      } else if (trimmed.includes('boatId=')) {
+        const m = trimmed.match(/[?&]boatId=([^&#]+)/i);
+        if (m && m[1]) boatId = decodeURIComponent(m[1]);
+      } else if (/^JAL-[A-Z0-9]{4,16}$/i.test(trimmed)) {
+        boatId = trimmed;
+      } else if (/^[a-f0-9]{24}$/i.test(trimmed)) {
+        boatId = trimmed;
+      } else if (trimmed.startsWith('boat-')) {
+        boatId = trimmed;
+      }
+
+      if (!boatId) {
+        throw new Error('Unrecognized QR code format. Please scan a valid JalRide Standee or Boarding Ticket.');
       }
 
       // Fetch live boat status from backend API
+      setIsVerifying(true);
       const statusRes = await api.getLiveBoatStatusForQr(boatId);
+      setIsVerifying(false);
+
       const boat = statusRes.boat || {};
 
+      if (statusRes.canBook === false) {
+        Alert.alert(
+          'Boarding Unavailable',
+          `Boat "${boat.boatName || 'Vessel'}" is currently ${statusRes.statusLabel || statusRes.status || 'not available for boarding'}.\n\nPlease check back shortly or scan another boat.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                isScanningActiveRef.current = true;
+                setIsScanningActive(true);
+              },
+            },
+          ]
+        );
+        return;
+      }
+
       setScannedData({
-        boatId,
+        boatId: boat._id || boatId,
+        qrCodeId: boat.qrCodeId || (boatId.startsWith('JAL-') ? boatId : null),
         boatName: boat.boatName || 'Express Waterways Boat',
+        boatType: boat.boatType || 'Motor Boat',
         ghat: statusRes.currentGhat || boat.location || 'Boarding Point',
-        price: boat.price || 350,
-        seatsRemaining: statusRes.seatsRemaining || 18,
+        price: statusRes.effectivePrice || boat.price || 350,
+        seatsRemaining: statusRes.availableSeats ?? statusRes.seatsRemaining ?? 10,
+        statusLabel: statusRes.statusLabel || 'Ready for Boarding',
       });
       setShowWalkinSheet(true);
     } catch (err) {
@@ -160,32 +215,255 @@ export default function QrScanScreen({ navigation }) {
   };
 
   const handleConfirmWalkin = async () => {
+    if (!scannedData || isBooking || isVerifyingPayment) return;
     setIsBooking(true);
     try {
-      const pCount = parseInt(walkinPassengers) || 1;
+      const pCount = Math.max(1, parseInt(walkinPassengers, 10) || 1);
+      const isCash = walkinPayment === 'cash';
+
       const res = await api.bookInstantQr(scannedData.boatId, {
         passengers: pCount,
-        totalAmount: scannedData.price * pCount,
-        paymentMethod: walkinPayment,
+        paymentMethod: isCash ? 'cash' : 'online',
+        useWalletBalance: !isCash, // Deduct wallet balance if user has sufficient funds
       });
 
-      setShowWalkinSheet(false);
-      setIsScanningActive(true);
-      Alert.alert(
-        'Instant Ghat Boarding Pass Generated! ⚡',
-        `Your walk-in ride on ${scannedData.boatName} at ${scannedData.ghat} is confirmed. ${walkinPayment === 'cash' ? 'Hand ₹' + (scannedData.price * pCount) + ' cash to the Navik.' : 'Payment completed.'}`,
-        [
-          {
-            text: 'View Boarding Pass',
-            onPress: () => navigation.navigate('Ticket', { booking: res.booking }),
-          },
-        ]
-      );
+      if (!res || !res.success) {
+        throw new Error(res?.message || 'Failed to initiate instant booking');
+      }
+
+      // Case 1: Cash on Ghat Booking (Auto-confirmed or Pending Acceptance)
+      if (res.isCash || isCash) {
+        setShowWalkinSheet(false);
+        isScanningActiveRef.current = true;
+        setIsScanningActive(true);
+
+        const confirmedBooking = res.booking;
+        const paidAmount = confirmedBooking?.amount || (scannedData.price * pCount);
+
+        Alert.alert(
+          'Instant Ghat Boarding Pass Generated! ⚡',
+          `Your walk-in ride on ${scannedData.boatName} at ${scannedData.ghat} is confirmed.\nHand ₹${paidAmount} cash to the Navik upon boarding.`,
+          [
+            {
+              text: 'View Boarding Pass',
+              onPress: () => navigation.navigate('Ticket', { booking: confirmedBooking }),
+            },
+          ]
+        );
+        return;
+      }
+
+      // Case 2: Fully Paid via Wallet Balance
+      if (res.fullyPaid && res.booking) {
+        setShowWalkinSheet(false);
+        isScanningActiveRef.current = true;
+        setIsScanningActive(true);
+
+        Alert.alert(
+          'Paid from Wallet! ⚡',
+          `Your instant ride on ${scannedData.boatName} is confirmed with wallet balance.`,
+          [
+            {
+              text: 'View Boarding Pass',
+              onPress: () => navigation.navigate('Ticket', { booking: res.booking }),
+            },
+          ]
+        );
+        return;
+      }
+
+      // Case 3: Online Payment via Razorpay
+      if (res.order && res.booking) {
+        setShowWalkinSheet(false);
+        setActiveQrBooking(res.booking);
+        retainedBookingContextRef.current = res.booking;
+        setActivePaymentOrder({
+          order: res.order,
+          key: res.razorpayKeyId,
+          booking: res.booking,
+        });
+        setShowRazorpayModal(true);
+        return;
+      }
+
+      throw new Error('Unexpected response from booking service.');
     } catch (e) {
-      Alert.alert('Error', e.message || 'Instant booking failed.');
+      Alert.alert('Booking Error', e.message || 'Instant booking failed.');
     } finally {
       setIsBooking(false);
     }
+  };
+
+  const executeVerification = async (signaturePayload, bookingToVerify) => {
+    if (isVerifyingPaymentRef.current) return;
+    isVerifyingPaymentRef.current = true;
+    setIsVerifyingPayment(true);
+    setShowRazorpayModal(false);
+
+    const bookingContext = bookingToVerify || activeQrBooking || retainedBookingContextRef.current;
+    const bookingId = bookingContext?._id || bookingContext?.id;
+    const orderId =
+      signaturePayload?.razorpay_order_id ||
+      signaturePayload?.razorpayOrderId ||
+      activePaymentOrder?.order?.id;
+    const paymentId =
+      signaturePayload?.razorpay_payment_id ||
+      signaturePayload?.razorpayPaymentId;
+    const signature =
+      signaturePayload?.razorpay_signature ||
+      signaturePayload?.razorpaySignature;
+
+    if (!orderId || !paymentId || !signature || !bookingId) {
+      isVerifyingPaymentRef.current = false;
+      if (isMountedRef.current) {
+        setIsVerifyingPayment(false);
+      }
+      Alert.alert('Verification Error', 'Missing required payment verification parameters.');
+      return;
+    }
+
+    const verifyPayload = {
+      bookingId,
+      razorpayOrderId: orderId,
+      razorpayPaymentId: paymentId,
+      razorpaySignature: signature,
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+      razorpay_signature: signature,
+    };
+
+    // Retain exact original signature payload and booking context for network retry
+    retainedSignatureRef.current = verifyPayload;
+    retainedBookingContextRef.current = bookingContext;
+
+    try {
+      const verifyRes = await api.verifyInstantPayment(verifyPayload);
+
+      if (verifyRes && verifyRes.success) {
+        // Clear retained signature recovery state upon confirmed verification
+        retainedSignatureRef.current = null;
+        retainedBookingContextRef.current = null;
+
+        const verifiedBooking = verifyRes.booking || (await api.getBookingById(bookingId));
+
+        if (isMountedRef.current) {
+          isScanningActiveRef.current = true;
+          setIsScanningActive(true);
+          setActivePaymentOrder(null);
+          setActiveQrBooking(null);
+
+          Alert.alert(
+            'Payment Successful! ⚡',
+            `Your digital boarding pass for ${scannedData?.boatName || 'Boat'} is now ready.`,
+            [
+              {
+                text: 'View Boarding Pass',
+                onPress: () => {
+                  if (isMountedRef.current) {
+                    navigation.navigate('Ticket', { booking: verifiedBooking });
+                  }
+                },
+              },
+            ]
+          );
+        }
+      } else {
+        throw new Error(verifyRes?.message || 'Payment signature verification failed.');
+      }
+    } catch (err) {
+      const errMsg = err?.message || '';
+      const isSignatureRejection =
+        errMsg.toLowerCase().includes('signature') ||
+        errMsg.toLowerCase().includes('mismatch') ||
+        errMsg.toLowerCase().includes('invalid');
+
+      if (isSignatureRejection) {
+        // Backend rejected signature: clear retained state and do not offer retry
+        retainedSignatureRef.current = null;
+        retainedBookingContextRef.current = null;
+        setActivePaymentOrder(null);
+        setActiveQrBooking(null);
+
+        if (isMountedRef.current) {
+          Alert.alert(
+            'Payment Verification Failed',
+            `Payment signature was rejected by the server (${errMsg}). Please contact support with Order ID: ${orderId}.`,
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  isScanningActiveRef.current = true;
+                  setIsScanningActive(true);
+                },
+              },
+            ]
+          );
+        }
+      } else {
+        // Network timeout / connection failure: retain payload and offer Retry Verification
+        if (isMountedRef.current) {
+          Alert.alert(
+            'Verification Network Error',
+            'Payment succeeded on gateway, but server verification encountered a network error. Tap Retry Verification to verify your pass.',
+            [
+              {
+                text: 'Retry Verification',
+                onPress: () => {
+                  if (retainedSignatureRef.current) {
+                    executeVerification(retainedSignatureRef.current, retainedBookingContextRef.current);
+                  }
+                },
+              },
+              {
+                text: 'Dismiss',
+                style: 'cancel',
+                onPress: () => {
+                  retainedSignatureRef.current = null;
+                  retainedBookingContextRef.current = null;
+                  setActivePaymentOrder(null);
+                  setActiveQrBooking(null);
+                  isScanningActiveRef.current = true;
+                  setIsScanningActive(true);
+                },
+              },
+            ]
+          );
+        }
+      }
+    } finally {
+      isVerifyingPaymentRef.current = false;
+      if (isMountedRef.current) {
+        setIsVerifyingPayment(false);
+      }
+    }
+  };
+
+  const handleQrPaymentSuccess = async (signaturePayload) => {
+    executeVerification(signaturePayload, activeQrBooking);
+  };
+
+  const handleQrPaymentCancel = () => {
+    setShowRazorpayModal(false);
+    retainedSignatureRef.current = null;
+    retainedBookingContextRef.current = null;
+    setActivePaymentOrder(null);
+    setActiveQrBooking(null);
+    isScanningActiveRef.current = true;
+    setIsScanningActive(true);
+
+    Alert.alert(
+      'Payment Incomplete',
+      'Payment was cancelled and your pass was not issued. To board this boat, please tap Confirm or re-scan the boat standee QR code.',
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            isScanningActiveRef.current = true;
+            setIsScanningActive(true);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -409,6 +687,27 @@ export default function QrScanScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Official Razorpay Checkout Modal for QR Instant Rides */}
+      <RazorpayCheckoutModal
+        visible={showRazorpayModal}
+        orderData={activePaymentOrder}
+        customer={{
+          name: user?.name || 'Pilgrim Devotee',
+          email: user?.email || 'pilgrim@jalride.com',
+          phone: user?.phone || '9876543210',
+        }}
+        onSuccess={handleQrPaymentSuccess}
+        onCancel={handleQrPaymentCancel}
+      />
+
+      {/* Verification in Progress Overlay */}
+      {isVerifyingPayment && (
+        <View style={styles.verifyingOverlay}>
+          <ActivityIndicator size="large" color={colors.teal} />
+          <Text style={styles.verifyingOverlayText}>Verifying Payment & Issuing Digital Pass...</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -682,5 +981,18 @@ const styles = StyleSheet.create({
   radioDotActive: {
     borderColor: colors.teal,
     backgroundColor: colors.teal,
+  },
+  verifyingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 30, 35, 0.88)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  verifyingOverlayText: {
+    ...typography.bodyMedium,
+    color: colors.white,
+    marginTop: spacing.m,
+    fontWeight: '600',
   },
 });

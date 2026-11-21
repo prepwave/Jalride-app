@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -14,10 +14,11 @@ import { colors, radii, spacing, typography, shadows } from '../../theme';
 
 let NativeRazorpay = null;
 try {
-  if (NativeModules.RazorpayCheckout) {
-    NativeRazorpay = require('react-native-razorpay').default;
-  }
-} catch (_) {}
+  const rzp = require('react-native-razorpay');
+  NativeRazorpay = rzp.default || rzp;
+} catch (_) {
+  NativeRazorpay = NativeModules?.RNRazorpayCheckout || NativeModules?.RazorpayCheckout || null;
+}
 
 export default function RazorpayCheckoutModal({
   visible,
@@ -36,20 +37,27 @@ export default function RazorpayCheckoutModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  if (!visible || !orderData) return null;
-
-  const orderId = orderData.order?.id || orderData.orderId || `order_${Date.now()}`;
-  const amountInRupees = orderData.order?.amount
+  const orderId = orderData?.order?.id || orderData?.orderId || `order_${Date.now()}`;
+  const amountInRupees = orderData?.order?.amount
     ? orderData.order.amount / 100
-    : orderData.amount || orderData.booking?.amount || 0;
+    : orderData?.amount || orderData?.booking?.amount || 0;
 
   const handleLaunchNativeIfAvailable = () => {
-    if (NativeRazorpay) {
+    const rzpClient =
+      NativeRazorpay && typeof NativeRazorpay.open === 'function'
+        ? NativeRazorpay
+        : NativeModules?.RNRazorpayCheckout?.open
+        ? NativeModules.RNRazorpayCheckout
+        : NativeModules?.RazorpayCheckout?.open
+        ? NativeModules.RazorpayCheckout
+        : null;
+
+    if (rzpClient && typeof rzpClient.open === 'function') {
       const options = {
-        description: `JalRide Boat Booking — ${orderData.booking?.ticketId || 'Varanasi Ghats'}`,
+        description: `JalRide Boat Booking — ${orderData?.booking?.ticketId || 'Varanasi Ghats'}`,
         image: 'https://jalride.com/favicon.png',
         currency: 'INR',
-        key: orderData.key || 'rzp_test_placeholder',
+        key: orderData?.key || 'rzp_test_placeholder',
         amount: Math.round(amountInRupees * 100),
         name: 'JalRide Inland Waterways',
         order_id: orderId,
@@ -62,7 +70,8 @@ export default function RazorpayCheckoutModal({
       };
 
       setIsProcessing(true);
-      NativeRazorpay.open(options)
+      rzpClient
+        .open(options)
         .then((data) => {
           setIsProcessing(false);
           onSuccess({
@@ -73,12 +82,22 @@ export default function RazorpayCheckoutModal({
         })
         .catch((err) => {
           setIsProcessing(false);
-          setErrorMsg(err.description || 'Native payment was cancelled or failed.');
+          const desc = err?.description || err?.message || 'Native payment was cancelled or failed.';
+          setErrorMsg(desc);
         });
       return true;
     }
     return false;
   };
+
+  useEffect(() => {
+    if (visible && orderData) {
+      setErrorMsg('');
+      handleLaunchNativeIfAvailable();
+    }
+  }, [visible, orderData?.order?.id, orderData?.orderId]);
+
+  if (!visible || !orderData) return null;
 
   const handlePay = async () => {
     setErrorMsg('');

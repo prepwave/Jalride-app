@@ -11,6 +11,11 @@ import AdminDashboardScreen from '../../screens/admin/AdminDashboardScreen';
 import AdminBoatsScreen from '../../screens/admin/AdminBoatsScreen';
 import AdminUsersScreen from '../../screens/admin/AdminUsersScreen';
 import AdminSettingsScreen from '../../screens/admin/AdminSettingsScreen';
+import AdminCommissionSettingsScreen from '../../screens/admin/AdminCommissionSettingsScreen';
+import AdminBookingsScreen from '../../screens/admin/AdminBookingsScreen';
+import AdminRefundsScreen from '../../screens/admin/AdminRefundsScreen';
+import AdminKycScreen from '../../screens/admin/AdminKycScreen';
+import AdminSettlementsScreen from '../../screens/admin/AdminSettlementsScreen';
 import ProfileScreen from '../../screens/customer/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
@@ -88,6 +93,11 @@ export default function AdminNavigator() {
       <Stack.Screen name="AdminBoats" component={AdminBoatsScreen} />
       <Stack.Screen name="AdminUsers" component={AdminUsersScreen} />
       <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} />
+      <Stack.Screen name="AdminCommissionSettings" component={AdminCommissionSettingsScreen} />
+      <Stack.Screen name="AdminBookings" component={AdminBookingsScreen} />
+      <Stack.Screen name="AdminRefunds" component={AdminRefundsScreen} />
+      <Stack.Screen name="AdminKyc" component={AdminKycScreen} />
+      <Stack.Screen name="AdminSettlements" component={AdminSettlementsScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
     </Stack.Navigator>
   );

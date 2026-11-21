@@ -20,6 +20,7 @@ import ProfileScreen from '../../screens/customer/ProfileScreen';
 import ChatScreen from '../../screens/customer/ChatScreen';
 import NotificationsScreen from '../../screens/customer/NotificationsScreen';
 import PrivacyDataRightsScreen from '../../screens/customer/PrivacyDataRightsScreen';
+import ManageBankAccountsScreen from '../../screens/customer/ManageBankAccountsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -117,6 +118,7 @@ export default function CustomerNavigator() {
       <Stack.Screen name="Wallet" component={CustomerWalletScreen} />
       <Stack.Screen name="MyRides" component={MyRidesScreen} />
       <Stack.Screen name="PrivacyDataRights" component={PrivacyDataRightsScreen} />
+      <Stack.Screen name="ManageBankAccounts" component={ManageBankAccountsScreen} />
     </Stack.Navigator>
   );
 }

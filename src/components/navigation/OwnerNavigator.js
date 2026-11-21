@@ -13,9 +13,14 @@ import OwnerBookingsScreen from '../../screens/owner/OwnerBookingsScreen';
 import OwnerWalletScreen from '../../screens/owner/OwnerWalletScreen';
 
 import AddEditBoatScreen from '../../screens/owner/AddEditBoatScreen';
+import OwnerAvailabilityScreen from '../../screens/owner/OwnerAvailabilityScreen';
 import OwnerKycScreen from '../../screens/owner/OwnerKycScreen';
 import OwnerQrPostersScreen from '../../screens/owner/OwnerQrPostersScreen';
 import ProfileScreen from '../../screens/customer/ProfileScreen';
+import ManageBankAccountsScreen from '../../screens/customer/ManageBankAccountsScreen';
+import NotificationsScreen from '../../screens/customer/NotificationsScreen';
+import PrivacyDataRightsScreen from '../../screens/customer/PrivacyDataRightsScreen';
+import CustomerWalletScreen from '../../screens/customer/CustomerWalletScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -92,10 +97,15 @@ export default function OwnerNavigator() {
       <Stack.Screen name="OwnerBookings" component={OwnerBookingsScreen} />
       <Stack.Screen name="OwnerFleet" component={OwnerFleetScreen} />
       <Stack.Screen name="AddEditBoat" component={AddEditBoatScreen} />
+      <Stack.Screen name="OwnerAvailability" component={OwnerAvailabilityScreen} />
       <Stack.Screen name="OwnerWallet" component={OwnerWalletScreen} />
       <Stack.Screen name="OwnerKyc" component={OwnerKycScreen} />
       <Stack.Screen name="OwnerQrPosters" component={OwnerQrPostersScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="ManageBankAccounts" component={ManageBankAccountsScreen} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="PrivacyDataRights" component={PrivacyDataRightsScreen} />
+      <Stack.Screen name="Wallet" component={CustomerWalletScreen} />
     </Stack.Navigator>
   );
 }

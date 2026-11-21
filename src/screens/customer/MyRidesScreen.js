@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,10 @@ import {
   TouchableOpacity,
   RefreshControl,
   StatusBar,
+  AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
@@ -16,6 +18,42 @@ import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingSkeleton from '../../components/common/LoadingSkeleton';
+import ReviewModal from '../../components/common/ReviewModal';
+
+// Authoritative booking statuses supported by backend Booking model (enum in backend/models/Booking.js)
+export const VALID_BOOKING_STATUSES = ['pending', 'confirmed', 'completed', 'cancelled', 'expired'];
+
+/**
+ * Normalizes booking status safely according to backend contract.
+ * Rules:
+ * 1. If bookingStatus is present and valid, use it.
+ * 2. If bookingStatus is absent but legacy status is valid, use legacy value.
+ * 3. If both are absent, fallback to backend model schema default ('pending').
+ * 4. If an unsupported/unrecognized status is provided, classify as 'unknown'.
+ * 5. Unknown status is NEVER silently classified as 'confirmed'.
+ */
+export const getBookingStatus = (b) => {
+  if (!b || typeof b !== 'object') return 'unknown';
+
+  const rawBookingStatus = typeof b.bookingStatus === 'string' ? b.bookingStatus.trim().toLowerCase() : null;
+  if (rawBookingStatus) {
+    if (VALID_BOOKING_STATUSES.includes(rawBookingStatus)) {
+      return rawBookingStatus;
+    }
+    return 'unknown';
+  }
+
+  const rawLegacyStatus = typeof b.status === 'string' ? b.status.trim().toLowerCase() : null;
+  if (rawLegacyStatus) {
+    if (VALID_BOOKING_STATUSES.includes(rawLegacyStatus)) {
+      return rawLegacyStatus;
+    }
+    return 'unknown';
+  }
+
+  // Authoritative backend model default for new/empty booking is 'pending'
+  return 'pending';
+};
 
 export default function MyRidesScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -24,52 +62,112 @@ export default function MyRidesScreen({ navigation }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [selectedReviewBooking, setSelectedReviewBooking] = useState(null);
 
-  const loadBookings = async () => {
+  const isReviewEligible = (b) => {
+    if (!b) return false;
+    const s = getBookingStatus(b);
+    if (s === 'cancelled' || s === 'expired' || s === 'unknown' || s === 'pending') return false;
+    return (
+      s === 'completed' ||
+      s === 'confirmed' ||
+      b.paymentStatus === 'paid'
+    );
+  };
+
+  const isFetchingRef = useRef(false);
+
+  const loadBookings = useCallback(async (isSilent = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    if (!isSilent) setLoading(true);
     try {
       const data = await api.getMyBookings();
-      setBookings(data || []);
+      const list = Array.isArray(data) ? data : (data?.bookings || data?.data || []);
+      // Sort newest bookings first
+      list.sort((a, b) => {
+        const timeA = new Date(a.createdAt || `${a.bookingDate}T${a.bookingTime || '00:00'}:00Z`).getTime() || 0;
+        const timeB = new Date(b.createdAt || `${b.bookingDate}T${b.bookingTime || '00:00'}:00Z`).getTime() || 0;
+        return timeB - timeA;
+      });
+      setBookings(list);
     } catch (e) {
       console.warn('Error fetching bookings:', e);
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadBookings(true);
+    }, [loadBookings])
+  );
 
   useEffect(() => {
     loadBookings();
-  }, []);
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        loadBookings(true);
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [loadBookings]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadBookings();
+    loadBookings(false);
   };
 
-  const filteredBookings = bookings.filter((b) => {
-    if (activeTab === 'upcoming') {
-      return b.status === 'confirmed' || b.status === 'pending';
-    }
-    return b.status === 'completed' || b.status === 'cancelled';
+  const upcomingList = bookings.filter((b) => {
+    const s = getBookingStatus(b);
+    return s === 'confirmed' || s === 'pending';
   });
 
-  const renderBookingCard = ({ item }) => (
-    <Card
-      style={styles.card}
-      onPress={() => navigation.navigate('Ticket', { booking: item })}
-    >
-      <View style={styles.cardHeader}>
-        <View>
-          <Text style={styles.ticketId}>{item.ticketId}</Text>
-          <Text style={[styles.boatName, isDark && styles.textLight]}>
-            {item.boat?.boatName}
-          </Text>
+  const pastList = bookings.filter((b) => {
+    const s = getBookingStatus(b);
+    return s === 'completed' || s === 'cancelled' || s === 'expired' || s === 'unknown';
+  });
+
+  const filteredBookings = activeTab === 'upcoming' ? upcomingList : pastList;
+
+  const renderBookingCard = ({ item }) => {
+    const itemStatus = getBookingStatus(item);
+    const badgeVariant =
+      itemStatus === 'confirmed'
+        ? 'success'
+        : itemStatus === 'pending'
+        ? 'warning'
+        : itemStatus === 'completed'
+        ? 'teal'
+        : itemStatus === 'cancelled'
+        ? 'danger'
+        : itemStatus === 'expired'
+        ? 'default'
+        : 'default';
+
+    return (
+      <Card
+        style={styles.card}
+        onPress={() => navigation.navigate('Ticket', { booking: item })}
+      >
+        <View style={styles.cardHeader}>
+          <View>
+            <Text style={styles.ticketId}>{item.ticketId}</Text>
+            <Text style={[styles.boatName, isDark && styles.textLight]}>
+              {item.boat?.boatName}
+            </Text>
+          </View>
+          <Badge
+            label={itemStatus.toUpperCase()}
+            variant={badgeVariant}
+          />
         </View>
-        <Badge
-          label={item.status}
-          variant={item.status === 'confirmed' ? 'success' : item.status === 'completed' ? 'teal' : 'default'}
-        />
-      </View>
 
       <View style={styles.cardDivider} />
 
@@ -106,6 +204,20 @@ export default function MyRidesScreen({ navigation }) {
           <Text style={styles.actionBtnOutlineText}>View QR Ticket</Text>
         </TouchableOpacity>
 
+        {isReviewEligible(item) ? (
+          <TouchableOpacity
+            style={styles.actionBtnReview}
+            onPress={() => {
+              setSelectedReviewBooking(item);
+              setShowReviewModal(true);
+            }}
+          >
+            <Text style={styles.actionBtnReviewText}>
+              {item.reviewed ? '★ Reviewed' : '⭐ Rate Ride'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         <TouchableOpacity
           style={styles.actionBtnChat}
           onPress={() => navigation.navigate('Chat', { bookingId: item._id })}
@@ -115,6 +227,7 @@ export default function MyRidesScreen({ navigation }) {
       </View>
     </Card>
   );
+};
 
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
@@ -144,7 +257,7 @@ export default function MyRidesScreen({ navigation }) {
                 activeTab === 'upcoming' && styles.segmentTextActive,
               ]}
             >
-              Upcoming ({bookings.filter((b) => b.status === 'confirmed').length})
+              Upcoming ({upcomingList.length})
             </Text>
           </TouchableOpacity>
 
@@ -161,7 +274,7 @@ export default function MyRidesScreen({ navigation }) {
                 activeTab === 'completed' && styles.segmentTextActive,
               ]}
             >
-              Past Trips ({bookings.filter((b) => b.status === 'completed' || b.status === 'cancelled').length})
+              Past Trips ({pastList.length})
             </Text>
           </TouchableOpacity>
         </View>
@@ -202,6 +315,26 @@ export default function MyRidesScreen({ navigation }) {
           }
         />
       )}
+
+      {/* Post-Ride Community Review Modal */}
+      <ReviewModal
+        visible={showReviewModal}
+        booking={selectedReviewBooking}
+        onClose={() => {
+          setShowReviewModal(false);
+          setSelectedReviewBooking(null);
+        }}
+        onReviewSubmitted={(rev) => {
+          setBookings((prev) =>
+            prev.map((b) =>
+              b._id === selectedReviewBooking?._id
+                ? { ...b, reviewed: true, userReview: rev }
+                : b
+            )
+          );
+          loadBookings(true);
+        }}
+      />
     </View>
   );
 }
@@ -337,6 +470,21 @@ const styles = StyleSheet.create({
     ...typography.button,
     color: colors.teal,
     fontSize: 13,
+  },
+  actionBtnReview: {
+    flex: 1,
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+    paddingVertical: 10,
+    borderRadius: radii.m,
+    alignItems: 'center',
+  },
+  actionBtnReviewText: {
+    ...typography.button,
+    color: '#92400e',
+    fontSize: 13,
+    fontWeight: '700',
   },
   actionBtnChat: {
     paddingVertical: 10,

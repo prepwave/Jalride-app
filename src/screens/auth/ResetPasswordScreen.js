@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -21,46 +21,23 @@ import JalRideLogo from '../../components/common/JalRideLogo';
 
 export default function ResetPasswordScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { email: initialEmail } = route.params || {};
   const { isDark } = useTheme();
 
-  const [token, setToken] = useState('');
+  // If a reset token is passed directly via navigation / deep link
+  const token = route?.params?.token || '';
+  const initialEmail = route?.params?.email || '';
+
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [resending, setResending] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-
-  useEffect(() => {
-    let timer;
-    if (resendCooldown > 0) {
-      timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
-    }
-    return () => clearTimeout(timer);
-  }, [resendCooldown]);
-
-  const handleResend = async () => {
-    if (!initialEmail || resendCooldown > 0) return;
-    setResending(true);
-    setErrorMessage('');
-    try {
-      await api.forgotPassword(initialEmail);
-      Alert.alert('Code Resent 📨', 'A fresh password reset code has been sent to your email.');
-      setResendCooldown(45);
-    } catch (err) {
-      setErrorMessage(err.message || 'Could not resend code. Please try again.');
-    } finally {
-      setResending(false);
-    }
-  };
 
   const handleResetPassword = async () => {
     setErrorMessage('');
-    const cleanToken = token.trim();
+    const cleanToken = (token || '').trim();
 
     if (!cleanToken) {
-      setErrorMessage('Please enter the 6-digit reset code / OTP received via email.');
+      setErrorMessage('Reset token is missing. Please use the reset link sent to your email.');
       return;
     }
     if (!password || password.length < 6) {
@@ -86,7 +63,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
         ]
       );
     } catch (err) {
-      setErrorMessage(err.message || 'Password reset token is invalid or has expired.');
+      setErrorMessage(err.message || 'Password reset link is invalid or has expired.');
     } finally {
       setIsSubmitting(false);
     }
@@ -102,7 +79,10 @@ export default function ResetPasswordScreen({ navigation, route }) {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: Math.max(insets.top + spacing.m, 48), paddingBottom: Math.max(insets.bottom + spacing.l, 32) },
+          {
+            paddingTop: Math.max(insets.top + spacing.m, 48),
+            paddingBottom: Math.max(insets.bottom + spacing.l, 32),
+          },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -110,98 +90,135 @@ export default function ResetPasswordScreen({ navigation, route }) {
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Back to Login"
         >
-          <Text style={styles.backText}>← Back</Text>
+          <Text style={styles.backText}>← Back to Login</Text>
         </TouchableOpacity>
 
         {/* Brand Banner */}
         <View style={styles.brandSection}>
           <JalRideLogo size={56} style={{ marginBottom: spacing.m }} />
           <Text style={[styles.brandTitle, isDark && styles.textLight]}>
-            Create New Password
+            {token ? 'Set New Password' : 'Password Reset Info'}
           </Text>
           <Text style={styles.brandTagline}>
-            Enter the verification code and set your new credentials
+            {token
+              ? 'Choose a new, secure password for your JalRide account'
+              : 'Password reset is managed securely through your email'}
           </Text>
         </View>
 
-        {/* Reset Form Card */}
+        {/* Main Card */}
         <Card style={styles.card}>
-          <Text style={[styles.cardHeaderTitle, isDark && styles.textLight]}>
-            Set New Password
-          </Text>
-          <Text style={styles.cardHeaderSub}>
-            {initialEmail ? `Resetting password for: ${initialEmail}` : 'Ensure your new password has at least 6 characters'}
-          </Text>
-
           {errorMessage ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>⚠️ {errorMessage}</Text>
             </View>
           ) : null}
 
-          <Input
-            label="6-Digit Reset Code / OTP"
-            placeholder="Enter code or token from email"
-            value={token}
-            onChangeText={(t) => {
-              setToken(t);
-              if (errorMessage) setErrorMessage('');
-            }}
-            autoCapitalize="none"
-          />
-
-          <Input
-            label="New Password"
-            placeholder="At least 6 characters"
-            secureTextEntry
-            value={password}
-            onChangeText={(t) => {
-              setPassword(t);
-              if (errorMessage) setErrorMessage('');
-            }}
-          />
-
-          <Input
-            label="Confirm New Password"
-            placeholder="Re-enter new password"
-            secureTextEntry
-            value={confirmPassword}
-            onChangeText={(t) => {
-              setConfirmPassword(t);
-              if (errorMessage) setErrorMessage('');
-            }}
-          />
-
-          <Button
-            title={isSubmitting ? 'Updating Password...' : 'Save New Password ➔'}
-            onPress={handleResetPassword}
-            loading={isSubmitting}
-            variant="primary"
-            style={styles.submitBtn}
-          />
-
-          {initialEmail ? (
-            <TouchableOpacity
-              onPress={handleResend}
-              disabled={resendCooldown > 0 || resending}
-              style={{ marginTop: spacing.l, alignItems: 'center' }}
-            >
-              <Text
-                style={{
-                  color: resendCooldown > 0 ? colors.gray500 : colors.teal,
-                  fontWeight: '600',
-                  fontSize: 13,
-                }}
-              >
-                {resendCooldown > 0
-                  ? `Resend code in ${resendCooldown}s`
-                  : resending
-                  ? 'Sending fresh code...'
-                  : "Didn't receive the code? Resend Reset Code"}
+          {token ? (
+            /* Direct Token Reset View (Deep Link / Token Support) */
+            <View>
+              <Text style={[styles.cardHeaderTitle, isDark && styles.textLight]}>
+                Create New Password
               </Text>
-            </TouchableOpacity>
-          ) : null}
+              <Text style={styles.cardHeaderSub}>
+                {initialEmail
+                  ? `Updating password for: ${initialEmail}`
+                  : 'Ensure your password is at least 6 characters long'}
+              </Text>
+
+              <Input
+                label="New Password"
+                placeholder="At least 6 characters"
+                secureTextEntry
+                value={password}
+                onChangeText={(t) => {
+                  setPassword(t);
+                  if (errorMessage) setErrorMessage('');
+                }}
+              />
+
+              <Input
+                label="Confirm New Password"
+                placeholder="Re-enter new password"
+                secureTextEntry
+                value={confirmPassword}
+                onChangeText={(t) => {
+                  setConfirmPassword(t);
+                  if (errorMessage) setErrorMessage('');
+                }}
+              />
+
+              <Button
+                title={isSubmitting ? 'Updating Password...' : 'Save New Password ➔'}
+                onPress={handleResetPassword}
+                loading={isSubmitting}
+                variant="primary"
+                style={styles.submitBtn}
+              />
+            </View>
+          ) : (
+            /* Informational View: No Token / Link-Based Guidance */
+            <View style={styles.infoContainer}>
+              <View style={styles.iconBadge}>
+                <Text style={styles.iconBadgeText}>✉️</Text>
+              </View>
+
+              <Text style={[styles.cardHeaderTitle, styles.centerText, isDark && styles.textLight]}>
+                Email Link Required
+              </Text>
+
+              <Text style={[styles.cardHeaderSub, styles.centerText]}>
+                JalRide sends a secure reset link to your email address, not an OTP or one-time code.
+              </Text>
+
+              <View style={[styles.instructionsBox, isDark && styles.instructionsBoxDark]}>
+                <Text style={[styles.instructionStepTitle, isDark && styles.textLight]}>
+                  How password reset works:
+                </Text>
+                <View style={styles.stepRow}>
+                  <Text style={styles.stepNumber}>1.</Text>
+                  <Text style={[styles.stepText, isDark && styles.stepTextDark]}>
+                    Request a reset link using your account email.
+                  </Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <Text style={styles.stepNumber}>2.</Text>
+                  <Text style={[styles.stepText, isDark && styles.stepTextDark]}>
+                    Open the email from JalRide and click the <Text style={styles.boldText}>Reset Password</Text> link.
+                  </Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <Text style={styles.stepNumber}>3.</Text>
+                  <Text style={[styles.stepText, isDark && styles.stepTextDark]}>
+                    Set your new password on the secure website that opens in your browser.
+                  </Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <Text style={styles.stepNumber}>4.</Text>
+                  <Text style={[styles.stepText, isDark && styles.stepTextDark]}>
+                    Return to this app and sign in with your new password.
+                  </Text>
+                </View>
+              </View>
+
+              <Button
+                title="Return to Login ➔"
+                onPress={() => navigation.navigate('Login')}
+                variant="primary"
+                style={styles.actionBtn}
+              />
+
+              <TouchableOpacity
+                onPress={() => navigation.navigate('ForgotPassword')}
+                style={styles.reqLink}
+              >
+                <Text style={styles.reqLinkText}>Request a New Reset Link ➔</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </Card>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -237,18 +254,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: radii.xl,
-    backgroundColor: 'rgba(0, 168, 150, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.m,
-  },
-  logoIcon: {
-    fontSize: 32,
-  },
   brandTitle: {
     ...typography.h2,
     color: colors.ink,
@@ -274,6 +279,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     marginBottom: spacing.l,
   },
+  centerText: {
+    textAlign: 'center',
+  },
+  boldText: {
+    fontWeight: '700',
+  },
   errorBox: {
     backgroundColor: '#fef2f2',
     borderWidth: 1,
@@ -289,5 +300,73 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     marginTop: spacing.m,
+  },
+  infoContainer: {
+    alignItems: 'center',
+  },
+  iconBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: radii.xl,
+    backgroundColor: 'rgba(0, 168, 150, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.m,
+  },
+  iconBadgeText: {
+    fontSize: 32,
+  },
+  instructionsBox: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderRadius: radii.m,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: spacing.m,
+    marginVertical: spacing.m,
+  },
+  instructionsBoxDark: {
+    backgroundColor: '#0f2930',
+    borderColor: '#1e3a42',
+  },
+  instructionStepTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.ink,
+    marginBottom: spacing.s,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xs,
+  },
+  stepNumber: {
+    width: 20,
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.teal,
+  },
+  stepText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.gray600,
+  },
+  stepTextDark: {
+    color: '#94a3b8',
+  },
+  actionBtn: {
+    width: '100%',
+    marginTop: spacing.s,
+  },
+  reqLink: {
+    marginTop: spacing.l,
+    paddingVertical: spacing.xs,
+    alignItems: 'center',
+  },
+  reqLinkText: {
+    color: colors.teal,
+    fontWeight: '600',
+    fontSize: 13,
   },
 });

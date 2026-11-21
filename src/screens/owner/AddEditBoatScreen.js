@@ -9,8 +9,11 @@ import {
   StatusBar,
   Alert,
   Switch,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
-import { colors, radii, spacing, typography } from '../../theme';
+import * as ImagePicker from 'expo-image-picker';
+import { colors, radii, spacing, typography, shadows } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
 import Header from '../../components/common/Header';
@@ -18,29 +21,25 @@ import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
 import { MOCK_GHATS } from '../../services/mockData';
 
-const ALL_AMENITIES = [
-  'Life Jackets',
-  'First Aid Kit',
-  'Waterproof Storage',
-  'Tour Guide / Narrator',
-  'Sound System & Music',
-  'Cushioned Seating',
-  'Mineral Water',
-  'Onboard Restroom',
-  'Canopy / Sun Shade',
-];
-
+// Authoritative Boat Category Enum matching backend Boat.js schema
 const BOAT_CATEGORIES = [
+  'Rowboat',
+  'Sailboat',
   'Motor Boat',
   'Speed Boat',
-  'Row Boat',
-  'Pedal Boat',
-  'Shikara',
-  'Bajra / Deck Cruiser',
+  'Deck Cruiser',
   'Houseboat',
-  'Luxury Yacht',
-  'Ferry',
+  'Sunset Cruiser',
 ];
+
+const RIDE_CATEGORIES = [
+  { key: 'general', label: 'General / Heritage' },
+  { key: 'sunrise', label: '🌅 Sunrise Ride' },
+  { key: 'aarti', label: '🪔 Aarti View' },
+  { key: 'whole_boat', label: '👑 Private Charter' },
+];
+
+const PRESET_GHATS = MOCK_GHATS.filter((g) => g !== 'All Ghats');
 
 export default function AddEditBoatScreen({ navigation, route }) {
   const { boat } = route.params || {};
@@ -48,28 +47,44 @@ export default function AddEditBoatScreen({ navigation, route }) {
   const { isDark } = useTheme();
 
   const [boatName, setBoatName] = useState(boat?.boatName || '');
-  const [location, setLocation] = useState(boat?.location || 'Assi Ghat');
+  const initialLocation = boat?.location || 'Assi Ghat';
+  const isCustomInitial = !!initialLocation && !PRESET_GHATS.includes(initialLocation);
+  const [selectedGhat, setSelectedGhat] = useState(isCustomInitial ? 'Other' : initialLocation);
+  const [customStationName, setCustomStationName] = useState(isCustomInitial ? initialLocation : '');
+
   const [boatType, setBoatType] = useState(boat?.boatType || 'Motor Boat');
+  const [selectedThemes, setSelectedThemes] = useState(() => {
+    if (boat?.rideCategory) {
+      const themes = [boat.rideCategory];
+      if (boat.allowWholeBoatBooking && !themes.includes('whole_boat')) {
+        themes.push('whole_boat');
+      }
+      return themes;
+    }
+    return ['general'];
+  });
+
+  const toggleTheme = (key) => {
+    setSelectedThemes((prev) => {
+      const exists = prev.includes(key);
+      let next;
+      if (exists) {
+        next = prev.filter((k) => k !== key);
+        if (next.length === 0) next = ['general'];
+      } else {
+        next = [...prev, key];
+      }
+      if (next.includes('whole_boat')) {
+        setAllowWholeBoatBooking(true);
+      }
+      return next;
+    });
+  };
   const [capacity, setCapacity] = useState(boat ? String(boat.capacity) : '20');
   const [price, setPrice] = useState(boat ? String(boat.price) : '350');
   const [description, setDescription] = useState(boat?.description || '');
-  const [experience, setExperience] = useState(boat?.owner?.experience ? String(boat.owner.experience) : '5');
 
-  // Safety Information fields
-  const [lifeJacketsAvailable, setLifeJacketsAvailable] = useState(
-    boat?.safety?.lifeJacketsAvailable ?? true
-  );
-  const [lifeJacketsCount, setLifeJacketsCount] = useState(
-    boat?.safety?.lifeJacketsCount ? String(boat.safety.lifeJacketsCount) : '20'
-  );
-  const [childLifeJackets, setChildLifeJackets] = useState(
-    boat?.safety?.childLifeJackets ?? true
-  );
-  const [firstAidKit, setFirstAidKit] = useState(
-    boat?.safety?.firstAidKit ?? true
-  );
-
-  // Whole boat booking
+  // Whole boat charter
   const [allowWholeBoatBooking, setAllowWholeBoatBooking] = useState(
     boat?.allowWholeBoatBooking ?? false
   );
@@ -77,74 +92,194 @@ export default function AddEditBoatScreen({ navigation, route }) {
     boat?.wholeBoatPrice ? String(boat.wholeBoatPrice) : '3500'
   );
 
-  // Commission Rates for Owner
-  const [onlineCommissionRate, setOnlineCommissionRate] = useState(
-    boat?.onlineCommissionRate ? String(boat.onlineCommissionRate) : '10'
+  // Photos state
+  // Existing images from backend: array of { url, publicId, thumbnailUrl } or strings
+  const [existingImages, setExistingImages] = useState(
+    Array.isArray(boat?.images) ? boat.images : []
   );
-  const [cashCommissionRate, setCashCommissionRate] = useState(
-    boat?.cashCommissionRate ? String(boat.cashCommissionRate) : '12'
-  );
-
-  const [selectedAmenities, setSelectedAmenities] = useState(
-    boat?.amenities || ['Life Jackets', 'First Aid Kit']
-  );
+  // Newly selected photos from device: array of ImagePickerAsset
+  const [newPhotos, setNewPhotos] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  const toggleAmenity = (item) => {
-    if (selectedAmenities.includes(item)) {
-      setSelectedAmenities(selectedAmenities.filter((a) => a !== item));
-    } else {
-      setSelectedAmenities([...selectedAmenities, item]);
+  const totalPhotoCount = existingImages.length + newPhotos.length;
+
+  const handlePickPhotos = async () => {
+    const remainingSlots = 6 - totalPhotoCount;
+    if (remainingSlots <= 0) {
+      Alert.alert('Maximum Reached', 'You can upload up to 6 photos per boat.');
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'Permission Needed',
+          'Gallery access is required to upload boat photos for rider verification.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: remainingSlots,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const validAssets = [];
+        for (const asset of result.assets) {
+          // File size limit: 5MB matching backend upload.js limits
+          if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+            Alert.alert(
+              'File Too Large',
+              `"${asset.fileName || 'Selected image'}" exceeds the 5MB size limit. Please choose a smaller image.`
+            );
+            continue;
+          }
+          validAssets.push(asset);
+        }
+
+        setNewPhotos((prev) => [...prev, ...validAssets].slice(0, 6 - existingImages.length));
+      }
+    } catch (err) {
+      console.warn('Error picking image:', err);
+      Alert.alert('Image Picker Error', 'Could not open photo library. Please try again.');
     }
   };
 
+  const handleRemoveNewPhoto = (index) => {
+    setNewPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveExistingPhoto = async (index) => {
+    // If editing and backend boat ID exists, delete through verified endpoint; do not remove optimistically on error
+    Alert.alert(
+      'Remove Photo',
+      'Remove this photo from your boat listing?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            if (isEditing && boat?._id) {
+              try {
+                await api.deleteBoatImage(boat._id, index);
+                setExistingImages((prev) => prev.filter((_, i) => i !== index));
+              } catch (e) {
+                Alert.alert('Delete Photo Failed', e.message || 'Could not remove image from server. Please try again.');
+              }
+            } else {
+              setExistingImages((prev) => prev.filter((_, i) => i !== index));
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleSave = async () => {
-    if (!boatName.trim()) {
-      Alert.alert('Required', 'Please enter a boat name.');
+    const cleanName = boatName.trim();
+    if (!cleanName) {
+      Alert.alert('Required Field', 'Please enter a boat name.');
       return;
     }
-    if (!price || parseFloat(price) <= 0) {
-      Alert.alert('Invalid Price', 'Please enter a valid fare per seat.');
+
+    const numCapacity = parseInt(capacity, 10);
+    if (!numCapacity || isNaN(numCapacity) || numCapacity < 1 || numCapacity > 200) {
+      Alert.alert('Invalid Capacity', 'Passenger capacity must be between 1 and 200 riders.');
       return;
     }
+
+    const numPrice = parseFloat(price);
+    if (!numPrice || isNaN(numPrice) || numPrice < 10) {
+      Alert.alert('Invalid Price', 'Base fare must be at least ₹10 per seat.');
+      return;
+    }
+
+    // Backend rule: at least 1 photo required for new boat creation
+    if (!isEditing && newPhotos.length === 0) {
+      Alert.alert(
+        'Boat Photo Required',
+        'Official ghat regulations require at least one photo of your boat to publish a listing.'
+      );
+      return;
+    }
+
+    const finalLocation = selectedGhat === 'Other' ? customStationName.trim() : selectedGhat.trim();
+    if (!finalLocation) {
+      Alert.alert('Required Field', 'Please enter or select a boarding ghat station.');
+      return;
+    }
+
+    const primaryRideCategory =
+      selectedThemes.find((t) => ['sunrise', 'aarti', 'whole_boat', 'general'].includes(t)) || 'general';
+    const isWholeBoatActive = selectedThemes.includes('whole_boat') || allowWholeBoatBooking;
 
     setIsSaving(true);
     try {
-      const payload = {
-        ...(boat || {}), // preserve existing properties like images, reviews, ratings
-        boatName: boatName.trim(),
-        location,
-        boatType,
-        capacity: parseInt(capacity) || 20,
-        price: parseFloat(price) || 350,
-        description: description.trim(),
-        amenities: selectedAmenities,
-        allowWholeBoatBooking,
-        wholeBoatPrice: allowWholeBoatBooking ? (parseFloat(wholeBoatPrice) || 0) : undefined,
-        onlineCommissionRate: parseFloat(onlineCommissionRate) || 10,
-        cashCommissionRate: parseFloat(cashCommissionRate) || 12,
-        safety: {
-          lifeJacketsAvailable,
-          lifeJacketsCount: lifeJacketsAvailable ? (parseInt(lifeJacketsCount) || 0) : 0,
-          childLifeJackets,
-          firstAidKit,
-        },
-        experience: parseInt(experience) || 0,
-      };
+      if (newPhotos.length > 0) {
+        // Construct multipart FormData
+        const formData = new FormData();
+        formData.append('boatName', cleanName);
+        formData.append('location', finalLocation);
+        formData.append('boatType', boatType);
+        formData.append('capacity', String(numCapacity));
+        formData.append('price', String(Math.round(numPrice)));
+        formData.append('currency', 'INR');
+        formData.append('description', description.trim());
+        formData.append('rideCategory', primaryRideCategory);
+        formData.append('allowWholeBoatBooking', String(isWholeBoatActive));
+        if (isWholeBoatActive && wholeBoatPrice) {
+          formData.append('wholeBoatPrice', String(parseFloat(wholeBoatPrice) || 0));
+        }
 
-      if (isEditing) {
-        await api.updateBoat(boat._id, payload);
+        newPhotos.forEach((photo, idx) => {
+          const uri = photo.uri;
+          const name = photo.fileName || `boat_photo_${Date.now()}_${idx}.jpg`;
+          const ext = (name.split('.').pop() || 'jpg').toLowerCase();
+          const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+          formData.append('images', {
+            uri,
+            name,
+            type,
+          });
+        });
+
+        if (isEditing) {
+          await api.updateBoat(boat._id, formData);
+        } else {
+          await api.createBoat(formData);
+        }
       } else {
-        await api.createBoat(payload);
+        // Edit mode without new photos: send JSON payload to preserve existing gallery
+        const payload = {
+          boatName: cleanName,
+          location: finalLocation,
+          boatType,
+          capacity: numCapacity,
+          price: Math.round(numPrice),
+          currency: 'INR',
+          description: description.trim(),
+          rideCategory: primaryRideCategory,
+          allowWholeBoatBooking: Boolean(isWholeBoatActive),
+          wholeBoatPrice: isWholeBoatActive ? (parseFloat(wholeBoatPrice) || null) : null,
+        };
+
+        await api.updateBoat(boat._id, payload);
       }
 
       Alert.alert(
-        isEditing ? 'Boat Updated' : 'Boat Registered',
-        `${boatName} has been saved to the JalRide navigation directory.`,
+        isEditing ? 'Boat Updated! ⛵' : 'Boat Published! 🎉',
+        isEditing
+          ? `${cleanName} details have been updated on the Varanasi live booking grid.`
+          : `${cleanName} has been listed! It is now active on the JalRide booking directory.`,
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (err) {
-      Alert.alert('Save Error', err.message || 'Unable to save boat details.');
+      Alert.alert('Save Failed', err.message || 'Unable to save boat details. Please check your connection.');
     } finally {
       setIsSaving(false);
     }
@@ -155,50 +290,68 @@ export default function AddEditBoatScreen({ navigation, route }) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <Header
-        title={isEditing ? 'Edit Boat Details' : 'Register New Boat'}
-        subtitle="Global Waterways & Boat Registry"
+        title={isEditing ? 'Edit Boat Listing' : 'Register New Boat'}
+        subtitle="Varanasi Smart Ghat Vessel Directory"
         onBack={() => navigation.goBack()}
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Boat Name */}
-        <Text style={[styles.label, isDark && styles.textLight]}>Boat / Bajra Name</Text>
+        {/* Vessel Name */}
+        <Text style={[styles.label, isDark && styles.textLight]}>Boat / Bajra Name *</Text>
         <TextInput
           style={styles.input}
           placeholder="e.g. Maa Ganga Deluxe Bajra"
           value={boatName}
           onChangeText={setBoatName}
+          maxLength={100}
         />
 
-        {/* Ghat Stationed */}
-        <Text style={[styles.label, isDark && styles.textLight]}>Boarding Ghat Station</Text>
+        {/* Boarding Ghat Selection */}
+        <Text style={[styles.label, isDark && styles.textLight]}>Boarding Ghat Station *</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ghatRow}>
-          {MOCK_GHATS.filter((g) => g !== 'All Ghats').map((g) => (
+          {PRESET_GHATS.map((g) => (
             <TouchableOpacity
               key={g}
-              style={[
-                styles.ghatChip,
-                location === g && styles.ghatChipActive,
-              ]}
-              onPress={() => setLocation(g)}
+              style={[styles.ghatChip, selectedGhat === g && styles.ghatChipActive]}
+              onPress={() => setSelectedGhat(g)}
             >
-              <Text style={[styles.ghatText, location === g && styles.ghatTextActive]}>
+              <Text style={[styles.ghatText, selectedGhat === g && styles.ghatTextActive]}>
                 📍 {g}
               </Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity
+            style={[styles.ghatChip, selectedGhat === 'Other' && styles.ghatChipActive]}
+            onPress={() => setSelectedGhat('Other')}
+          >
+            <Text style={[styles.ghatText, selectedGhat === 'Other' && styles.ghatTextActive]}>
+              ➕ Other / Custom Station
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
 
-        {/* Boat Category */}
-        <Text style={[styles.label, isDark && styles.textLight]}>Boat Category / Vessel Type</Text>
+        {selectedGhat === 'Other' && (
+          <View style={{ marginTop: spacing.s, marginBottom: spacing.m }}>
+            <Text style={[styles.label, isDark && styles.textLight, { fontSize: 13, marginBottom: 4 }]}>
+              Custom Boarding Ghat / Station Name *
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Scindia Ghat, Panchganga Ghat, or Kedar Ghat"
+              value={customStationName}
+              onChangeText={setCustomStationName}
+              maxLength={100}
+            />
+          </View>
+        )}
+
+        {/* Verified Boat Category (Enum) */}
+        <Text style={[styles.label, isDark && styles.textLight]}>Vessel Type (Authoritative Registry) *</Text>
         <View style={styles.catWrap}>
           {BOAT_CATEGORIES.map((cat) => (
             <TouchableOpacity
               key={cat}
-              style={[
-                styles.catPill,
-                boatType === cat && styles.catPillActive,
-              ]}
+              style={[styles.catPill, boatType === cat && styles.catPillActive]}
               onPress={() => setBoatType(cat)}
             >
               <Text style={[styles.catPillText, boatType === cat && styles.catPillTextActive]}>
@@ -208,10 +361,29 @@ export default function AddEditBoatScreen({ navigation, route }) {
           ))}
         </View>
 
+        {/* Ride Category */}
+        <Text style={[styles.label, isDark && styles.textLight]}>Ride Theme / Classification (Multi-Select)</Text>
+        <View style={styles.catWrap}>
+          {RIDE_CATEGORIES.map((rc) => {
+            const isSelected = selectedThemes.includes(rc.key);
+            return (
+              <TouchableOpacity
+                key={rc.key}
+                style={[styles.catPill, isSelected && styles.catPillActive]}
+                onPress={() => toggleTheme(rc.key)}
+              >
+                <Text style={[styles.catPillText, isSelected && styles.catPillTextActive]}>
+                  {isSelected ? '✓ ' : ''}{rc.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         {/* Capacity & Price Row */}
         <View style={styles.twoColRow}>
           <View style={{ flex: 1, marginRight: spacing.s }}>
-            <Text style={[styles.label, isDark && styles.textLight]}>Passenger Capacity</Text>
+            <Text style={[styles.label, isDark && styles.textLight]}>Capacity (Seats) *</Text>
             <TextInput
               style={styles.input}
               keyboardType="numeric"
@@ -222,7 +394,7 @@ export default function AddEditBoatScreen({ navigation, route }) {
           </View>
 
           <View style={{ flex: 1, marginLeft: spacing.s }}>
-            <Text style={[styles.label, isDark && styles.textLight]}>Price per Seat (₹)</Text>
+            <Text style={[styles.label, isDark && styles.textLight]}>Fare / Seat (₹) *</Text>
             <TextInput
               style={styles.input}
               keyboardType="numeric"
@@ -233,12 +405,24 @@ export default function AddEditBoatScreen({ navigation, route }) {
           </View>
         </View>
 
+        {/* Description */}
+        <Text style={[styles.label, isDark && styles.textLight]}>Vessel Description</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="Verified boat ride piloted by certified crew with standard life jackets provided for all passengers..."
+          value={description}
+          onChangeText={setDescription}
+          multiline
+          numberOfLines={3}
+          maxLength={1000}
+        />
+
         {/* Whole Boat Charter Option */}
         <Card style={styles.optionCard}>
           <View style={styles.rowBetween}>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, paddingRight: spacing.m }}>
               <Text style={styles.optionTitle}>Allow Full Boat Private Charter</Text>
-              <Text style={styles.optionSub}>Passengers can reserve entire boat for private trips</Text>
+              <Text style={styles.optionSub}>Devotees can book the entire vessel for private Aarti or family darshan</Text>
             </View>
             <Switch
               value={allowWholeBoatBooking}
@@ -249,7 +433,7 @@ export default function AddEditBoatScreen({ navigation, route }) {
           </View>
           {allowWholeBoatBooking && (
             <View style={{ marginTop: spacing.m }}>
-              <Text style={[styles.label, { marginTop: 0 }]}>Whole Boat Charter Price (₹)</Text>
+              <Text style={[styles.label, { marginTop: 0 }]}>Whole Boat Fixed Fare (₹)</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="numeric"
@@ -261,150 +445,69 @@ export default function AddEditBoatScreen({ navigation, route }) {
           )}
         </Card>
 
-        {/* Safety Information Section */}
-        <Text style={[styles.sectionHeading, isDark && styles.textLight]}>Safety Equipment & Compliance</Text>
-        <Card style={styles.safetyCard}>
-          <View style={styles.rowBetween}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.optionTitle}>🦺 Adult Life Jackets Available</Text>
-              <Text style={styles.optionSub}>Verified life vests for passenger capacity</Text>
-            </View>
-            <Switch
-              value={lifeJacketsAvailable}
-              onValueChange={setLifeJacketsAvailable}
-              thumbColor={lifeJacketsAvailable ? colors.teal : colors.gray300}
-              trackColor={{ true: colors.tealMist, false: colors.gray200 }}
-            />
-          </View>
+        {/* Boat Photo Gallery Section */}
+        <Text style={[styles.sectionHeading, isDark && styles.textLight]}>
+          Vessel Photos ({totalPhotoCount}/6) {!isEditing && '*'}
+        </Text>
+        <Text style={styles.photoHint}>
+          Official ghat photo for passenger verification. JPG, PNG or WebP up to 5MB.
+        </Text>
 
-          {lifeJacketsAvailable && (
-            <View style={{ marginTop: spacing.m }}>
-              <Text style={[styles.label, { marginTop: 0 }]}>Number of Available Life Jackets</Text>
-              <TextInput
-                style={styles.input}
-                keyboardType="numeric"
-                placeholder="20"
-                value={lifeJacketsCount}
-                onChangeText={setLifeJacketsCount}
-              />
-            </View>
-          )}
-
-          <View style={[styles.rowBetween, { marginTop: spacing.m }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.optionTitle}>👶 Child-Sized Life Vests</Text>
-              <Text style={styles.optionSub}>Specialized safety jackets for children</Text>
-            </View>
-            <Switch
-              value={childLifeJackets}
-              onValueChange={setChildLifeJackets}
-              thumbColor={childLifeJackets ? colors.teal : colors.gray300}
-              trackColor={{ true: colors.tealMist, false: colors.gray200 }}
-            />
-          </View>
-
-          <View style={[styles.rowBetween, { marginTop: spacing.m }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.optionTitle}>🩹 First Aid Kit Onboard</Text>
-              <Text style={styles.optionSub}>Emergency first aid medical supplies</Text>
-            </View>
-            <Switch
-              value={firstAidKit}
-              onValueChange={setFirstAidKit}
-              thumbColor={firstAidKit ? colors.teal : colors.gray300}
-              trackColor={{ true: colors.tealMist, false: colors.gray200 }}
-            />
-          </View>
-        </Card>
-
-        {/* Commission Engine Configuration for Vessel */}
-        <Text style={[styles.sectionHeading, isDark && styles.textLight]}>Commission & Payout Preferences</Text>
-        <Card style={styles.optionCard}>
-          <Text style={styles.optionTitle}>Online Payment Commission Rate (%)</Text>
-          <Text style={styles.optionSub}>Platform fee deducted from digital payouts (UPI, Card, Wallet) - Default: 10%</Text>
-          <TextInput
-            style={[styles.input, { marginTop: spacing.s }]}
-            keyboardType="numeric"
-            placeholder="10"
-            value={onlineCommissionRate}
-            onChangeText={setOnlineCommissionRate}
-          />
-
-          <Text style={[styles.optionTitle, { marginTop: spacing.m }]}>Cash-on-Ride Commission Rate (%)</Text>
-          <Text style={styles.optionSub}>Platform fee debited against wallet for cash collected directly on ghat - Default: 12%</Text>
-          <TextInput
-            style={[styles.input, { marginTop: spacing.s }]}
-            keyboardType="numeric"
-            placeholder="12"
-            value={cashCommissionRate}
-            onChangeText={setCashCommissionRate}
-          />
-        </Card>
-
-        {/* Operating Experience */}
-        <Text style={[styles.label, isDark && styles.textLight]}>Captain / Operator Experience (Years)</Text>
-        <TextInput
-          style={styles.input}
-          keyboardType="numeric"
-          placeholder="e.g. 8"
-          value={experience}
-          onChangeText={setExperience}
-        />
-
-        {/* Description */}
-        <Text style={[styles.label, isDark && styles.textLight]}>Ride Description</Text>
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          placeholder="Describe your tour, timings, Aarti views, and amenities..."
-          value={description}
-          onChangeText={setDescription}
-          multiline
-          numberOfLines={3}
-        />
-
-        {/* Amenities Selection */}
-        <Text style={[styles.label, isDark && styles.textLight]}>Onboard Amenities & Equipment</Text>
-        <View style={styles.amenityWrap}>
-          {ALL_AMENITIES.map((am) => {
-            const isSelected = selectedAmenities.includes(am);
+        {/* Thumbnails Row */}
+        <View style={styles.photoGrid}>
+          {/* Existing Photos */}
+          {existingImages.map((img, i) => {
+            const url = typeof img === 'object' && img ? (img.url || img.secure_url) : String(img || '');
             return (
-              <TouchableOpacity
-                key={am}
-                style={[
-                  styles.amenityPill,
-                  isSelected && styles.amenityPillActive,
-                ]}
-                onPress={() => toggleAmenity(am)}
-              >
-                <Text style={[styles.amenityText, isSelected && styles.amenityTextActive]}>
-                  {isSelected ? '✓ ' : '+ '}
-                  {am}
-                </Text>
-              </TouchableOpacity>
+              <View key={`existing-${i}`} style={styles.photoThumbWrapper}>
+                <Image source={{ uri: url }} style={styles.photoThumb} />
+                <TouchableOpacity
+                  style={styles.removePhotoBtn}
+                  onPress={() => handleRemoveExistingPhoto(i)}
+                >
+                  <Text style={styles.removePhotoText}>✕</Text>
+                </TouchableOpacity>
+                <View style={styles.photoTag}>
+                  <Text style={styles.photoTagText}>Live #{i + 1}</Text>
+                </View>
+              </View>
             );
           })}
-        </View>
 
-        {/* Photo Uploader Box */}
-        <Text style={[styles.label, isDark && styles.textLight]}>Boat Photos</Text>
-        <TouchableOpacity
-          style={styles.uploadBox}
-          onPress={() => Alert.alert('Upload Photo', 'Select camera or photo gallery to upload vessel pictures.')}
-        >
-          <Text style={styles.uploadIcon}>📷</Text>
-          <Text style={styles.uploadTitle}>Tap to Upload Boat Photos</Text>
-          <Text style={styles.uploadSub}>PNG, JPG up to 10MB each</Text>
-        </TouchableOpacity>
+          {/* New Selected Photos */}
+          {newPhotos.map((photo, i) => (
+            <View key={`new-${i}`} style={styles.photoThumbWrapper}>
+              <Image source={{ uri: photo.uri }} style={styles.photoThumb} />
+              <TouchableOpacity
+                style={styles.removePhotoBtn}
+                onPress={() => handleRemoveNewPhoto(i)}
+              >
+                <Text style={styles.removePhotoText}>✕</Text>
+              </TouchableOpacity>
+              <View style={[styles.photoTag, { backgroundColor: colors.teal }]}>
+                <Text style={styles.photoTagText}>New</Text>
+              </View>
+            </View>
+          ))}
+
+          {/* Add Photo Button */}
+          {totalPhotoCount < 6 && (
+            <TouchableOpacity style={styles.addPhotoCard} onPress={handlePickPhotos}>
+              <Text style={styles.addPhotoIcon}>📷</Text>
+              <Text style={styles.addPhotoTitle}>+ Add Photo</Text>
+              <Text style={styles.addPhotoSub}>{6 - totalPhotoCount} left</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* Submit Button */}
         <Button
-          title={isEditing ? 'Save Changes' : 'Register Vessel'}
+          title={isEditing ? 'Save Boat Changes' : 'Publish Boat Listing'}
           onPress={handleSave}
           loading={isSaving}
-          style={{ marginTop: spacing.xl }}
+          variant="primary"
+          style={{ marginTop: spacing.xl, marginBottom: spacing.xxl }}
         />
-
-        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
@@ -418,23 +521,26 @@ const styles = StyleSheet.create({
   containerDark: {
     backgroundColor: '#0a1e23',
   },
-  textLight: {
-    color: '#eaf6f6',
-  },
   scroll: {
     padding: spacing.l,
+    paddingBottom: 80,
   },
   label: {
-    ...typography.bodyMedium,
+    ...typography.caption,
     fontWeight: '700',
     color: colors.ink,
     marginTop: spacing.m,
-    marginBottom: 6,
+    marginBottom: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  textLight: {
+    color: colors.white,
   },
   input: {
     backgroundColor: colors.white,
-    borderWidth: 1.5,
-    borderColor: colors.gray300,
+    borderWidth: 1,
+    borderColor: colors.line,
     borderRadius: radii.m,
     paddingHorizontal: spacing.m,
     paddingVertical: 12,
@@ -442,20 +548,20 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   textArea: {
-    height: 80,
+    minHeight: 80,
     textAlignVertical: 'top',
   },
   ghatRow: {
+    paddingVertical: spacing.xs,
     gap: spacing.s,
-    paddingVertical: 4,
   },
   ghatChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radii.full,
     backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.gray300,
+    borderColor: colors.line,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 8,
   },
   ghatChipActive: {
     backgroundColor: colors.teal,
@@ -463,8 +569,8 @@ const styles = StyleSheet.create({
   },
   ghatText: {
     ...typography.caption,
-    color: colors.ink,
     fontWeight: '600',
+    color: colors.gray600,
   },
   ghatTextActive: {
     color: colors.white,
@@ -473,22 +579,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.s,
-    marginBottom: spacing.m,
   },
   catPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: radii.full,
     backgroundColor: colors.white,
-    borderWidth: 1.5,
-    borderColor: colors.gray300,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radii.m,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 10,
   },
   catPillActive: {
     backgroundColor: colors.tealMist,
     borderColor: colors.teal,
   },
   catPillText: {
-    ...typography.caption,
+    ...typography.bodySmall,
     fontWeight: '600',
     color: colors.ink,
   },
@@ -496,9 +601,18 @@ const styles = StyleSheet.create({
     color: colors.teal,
     fontWeight: '700',
   },
+  twoColRow: {
+    flexDirection: 'row',
+    marginTop: spacing.xs,
+  },
   optionCard: {
+    marginTop: spacing.l,
     padding: spacing.m,
-    marginVertical: spacing.m,
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   optionTitle: {
     ...typography.bodyMedium,
@@ -510,99 +624,89 @@ const styles = StyleSheet.create({
     color: colors.gray500,
     marginTop: 2,
   },
-  rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   sectionHeading: {
     ...typography.h3,
     color: colors.ink,
-    marginTop: spacing.l,
-    marginBottom: spacing.s,
+    marginTop: spacing.xl,
+    marginBottom: 4,
   },
-  safetyCard: {
-    padding: spacing.m,
+  photoHint: {
+    ...typography.caption,
+    color: colors.gray500,
     marginBottom: spacing.m,
   },
-  catGrid: {
-    flexDirection: 'row',
-    gap: spacing.s,
-  },
-  catCard: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    borderRadius: radii.m,
-    backgroundColor: colors.white,
-    borderWidth: 1.5,
-    borderColor: colors.gray300,
-    alignItems: 'center',
-  },
-  catCardActive: {
-    backgroundColor: colors.tealMist,
-    borderColor: colors.teal,
-  },
-  catText: {
-    ...typography.caption,
-    fontWeight: '600',
-    color: colors.ink,
-    textAlign: 'center',
-  },
-  catTextActive: {
-    color: colors.teal,
-    fontWeight: '700',
-  },
-  twoColRow: {
-    flexDirection: 'row',
-  },
-  amenityWrap: {
+  photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.s,
+    gap: spacing.m,
   },
-  amenityPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: radii.full,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.gray300,
-  },
-  amenityPillActive: {
-    backgroundColor: colors.tealMist,
-    borderColor: colors.teal,
-  },
-  amenityText: {
-    ...typography.caption,
-    color: colors.ink,
-    fontWeight: '500',
-  },
-  amenityTextActive: {
-    color: colors.teal,
-    fontWeight: '700',
-  },
-  uploadBox: {
-    backgroundColor: colors.white,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.tealLight,
+  photoThumbWrapper: {
+    width: 100,
+    height: 100,
     borderRadius: radii.m,
-    padding: spacing.xl,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  photoThumb: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  removePhotoBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  uploadIcon: {
-    fontSize: 32,
-    marginBottom: 6,
+  removePhotoText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: 'bold',
   },
-  uploadTitle: {
-    ...typography.bodyMedium,
+  photoTag: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(10,46,54,0.85)',
+    paddingVertical: 2,
+    alignItems: 'center',
+  },
+  photoTagText: {
+    color: colors.white,
+    fontSize: 9,
     fontWeight: '700',
-    color: colors.ink,
   },
-  uploadSub: {
+  addPhotoCard: {
+    width: 100,
+    height: 100,
+    borderRadius: radii.m,
+    borderWidth: 2,
+    borderColor: colors.teal,
+    borderStyle: 'dashed',
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xs,
+  },
+  addPhotoIcon: {
+    fontSize: 24,
+    marginBottom: 2,
+  },
+  addPhotoTitle: {
     ...typography.caption,
-    color: colors.gray500,
+    fontWeight: '700',
+    color: colors.teal,
+  },
+  addPhotoSub: {
+    fontSize: 9,
+    color: colors.gray400,
   },
 });

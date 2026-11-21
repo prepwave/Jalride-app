@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography, shadows } from '../../theme';
@@ -27,35 +26,68 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isSent, setIsSent] = useState(false);
+  const [sentEmail, setSentEmail] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [isResending, setIsResending] = useState(false);
+
+  useEffect(() => {
+    let timer;
+    if (resendCooldown > 0) {
+      timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
+  const validateEmailFormat = (emailStr) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr);
+  };
 
   const handleSendReset = async () => {
     setErrorMessage('');
-    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedEmail = (email || '').trim().toLowerCase();
 
     if (!trimmedEmail) {
       setErrorMessage('Please enter your registered email address.');
       return;
     }
 
+    if (!validateEmailFormat(trimmedEmail)) {
+      setErrorMessage('Please enter a valid email address (e.g. devotee@example.com).');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const res = await api.forgotPassword(trimmedEmail);
+      await api.forgotPassword(trimmedEmail);
+      setSentEmail(trimmedEmail);
       setIsSent(true);
-      Alert.alert(
-        'Password Reset Code Sent 📨',
-        res.message || 'A password reset code has been sent to your email. Please enter it to choose a new password.',
-        [
-          {
-            text: 'Enter Reset Code',
-            onPress: () => navigation.navigate('ResetPassword', { email: trimmedEmail }),
-          },
-        ]
-      );
+      setResendCooldown(45);
     } catch (err) {
-      setErrorMessage(err.message || 'Unable to process password reset request.');
+      setErrorMessage(
+        err.message || 'Unable to connect to the server. Please check your internet connection and try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleResend = async () => {
+    if (!sentEmail || resendCooldown > 0 || isResending) return;
+    setIsResending(true);
+    setErrorMessage('');
+    try {
+      await api.forgotPassword(sentEmail);
+      setResendCooldown(45);
+    } catch (err) {
+      setErrorMessage(err.message || 'Could not resend reset link. Please try again.');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
+  const handleTryDifferentEmail = () => {
+    setIsSent(false);
+    setErrorMessage('');
   };
 
   return (
@@ -68,7 +100,10 @@ export default function ForgotPasswordScreen({ navigation }) {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: Math.max(insets.top + spacing.m, 48), paddingBottom: Math.max(insets.bottom + spacing.l, 32) },
+          {
+            paddingTop: Math.max(insets.top + spacing.m, 48),
+            paddingBottom: Math.max(insets.bottom + spacing.l, 32),
+          },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -76,6 +111,8 @@ export default function ForgotPasswordScreen({ navigation }) {
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Back to Login"
         >
           <Text style={styles.backText}>← Back to Login</Text>
         </TouchableOpacity>
@@ -84,22 +121,17 @@ export default function ForgotPasswordScreen({ navigation }) {
         <View style={styles.brandSection}>
           <JalRideLogo size={56} style={{ marginBottom: spacing.m }} />
           <Text style={[styles.brandTitle, isDark && styles.textLight]}>
-            Reset Your Password
+            {isSent ? 'Check Your Email' : 'Reset Your Password'}
           </Text>
           <Text style={styles.brandTagline}>
-            Enter your email to receive recovery instructions
+            {isSent
+              ? 'Password recovery instructions have been sent'
+              : 'Enter your registered email to receive a password reset link'}
           </Text>
         </View>
 
-        {/* Reset Request Card */}
+        {/* Main Card */}
         <Card style={styles.card}>
-          <Text style={[styles.cardHeaderTitle, isDark && styles.textLight]}>
-            Account Recovery
-          </Text>
-          <Text style={styles.cardHeaderSub}>
-            We'll send a secure 6-digit password reset code to your registered email.
-          </Text>
-
           {errorMessage ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>⚠️ {errorMessage}</Text>
@@ -107,40 +139,133 @@ export default function ForgotPasswordScreen({ navigation }) {
           ) : null}
 
           {isSent ? (
-            <View style={styles.successBox}>
-              <Text style={styles.successText}>
-                ✓ Password reset code sent! Check your inbox and spam folder.
+            /* Confirmation View: Link Sent via Email */
+            <View style={styles.sentContainer}>
+              <View style={styles.iconBadge}>
+                <Text style={styles.iconBadgeText}>📨</Text>
+              </View>
+
+              <Text style={[styles.cardHeaderTitle, styles.centerText, isDark && styles.textLight]}>
+                Reset Link Sent
               </Text>
+
+              <Text style={[styles.cardHeaderSub, styles.centerText]}>
+                If an account is associated with <Text style={styles.highlightText}>{sentEmail}</Text>, a secure password reset link has been sent.
+              </Text>
+
+              <View style={[styles.instructionsBox, isDark && styles.instructionsBoxDark]}>
+                <Text style={[styles.instructionStepTitle, isDark && styles.textLight]}>
+                  How to reset your password:
+                </Text>
+                <View style={styles.stepRow}>
+                  <Text style={styles.stepNumber}>1.</Text>
+                  <Text style={[styles.stepText, isDark && styles.stepTextDark]}>
+                    Open your email inbox (and check spam or junk).
+                  </Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <Text style={styles.stepNumber}>2.</Text>
+                  <Text style={[styles.stepText, isDark && styles.stepTextDark]}>
+                    Click the <Text style={styles.boldText}>Reset Password</Text> button in the email.
+                  </Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <Text style={styles.stepNumber}>3.</Text>
+                  <Text style={[styles.stepText, isDark && styles.stepTextDark]}>
+                    Set your new password in the browser window that opens.
+                  </Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <Text style={styles.stepNumber}>4.</Text>
+                  <Text style={[styles.stepText, isDark && styles.stepTextDark]}>
+                    Return to this app and sign in with your new password.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.expiryNote}>
+                <Text style={styles.expiryText}>⏱️ For security, the reset link expires in 30 minutes.</Text>
+              </View>
+
+              <Button
+                title="Return to Login ➔"
+                onPress={() => navigation.navigate('Login')}
+                variant="primary"
+                style={styles.actionBtn}
+              />
+
+              <TouchableOpacity
+                onPress={handleResend}
+                disabled={resendCooldown > 0 || isResending}
+                style={styles.resendLink}
+              >
+                <Text
+                  style={[
+                    styles.resendText,
+                    (resendCooldown > 0 || isResending) && styles.disabledText,
+                  ]}
+                >
+                  {resendCooldown > 0
+                    ? `Resend email in ${resendCooldown}s`
+                    : isResending
+                    ? 'Sending fresh link...'
+                    : "Didn't receive the email? Resend Reset Link"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleTryDifferentEmail}
+                style={styles.diffEmailLink}
+              >
+                <Text style={styles.diffEmailText}>Use a different email address</Text>
+              </TouchableOpacity>
             </View>
-          ) : null}
+          ) : (
+            /* Request Form View */
+            <View>
+              <Text style={[styles.cardHeaderTitle, isDark && styles.textLight]}>
+                Account Recovery
+              </Text>
+              <Text style={styles.cardHeaderSub}>
+                Enter your account email below. We'll send you a password reset link (valid for 30 minutes).
+              </Text>
 
-          <Input
-            label="Registered Email Address"
-            placeholder="devotee@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={email}
-            onChangeText={(t) => {
-              setEmail(t);
-              if (errorMessage) setErrorMessage('');
-            }}
-          />
+              <Input
+                label="Registered Email Address"
+                placeholder="devotee@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={email}
+                onChangeText={(t) => {
+                  setEmail(t);
+                  if (errorMessage) setErrorMessage('');
+                }}
+              />
 
-          <Button
-            title={isSubmitting ? 'Sending Code...' : 'Send Reset Code / OTP ➔'}
-            onPress={handleSendReset}
-            loading={isSubmitting}
-            variant="primary"
-            style={styles.submitBtn}
-          />
+              <View style={[styles.infoBanner, isDark && styles.infoBannerDark]}>
+                <Text style={styles.infoBannerIcon}>ℹ️</Text>
+                <Text style={[styles.infoBannerText, isDark && styles.infoBannerTextDark]}>
+                  JalRide sends a secure one-time link to your email. You will open the link in your web browser to choose your new password.
+                </Text>
+              </View>
 
-          <TouchableOpacity
-            style={styles.hasTokenLink}
-            onPress={() => navigation.navigate('ResetPassword', { email: email.trim() })}
-          >
-            <Text style={styles.hasTokenText}>Already have a reset code? Enter it here ➔</Text>
-          </TouchableOpacity>
+              <Button
+                title={isSubmitting ? 'Sending Reset Link...' : 'Send Reset Link ➔'}
+                onPress={handleSendReset}
+                loading={isSubmitting}
+                variant="primary"
+                style={styles.submitBtn}
+              />
+
+              <TouchableOpacity
+                style={styles.backToLoginLink}
+                onPress={() => navigation.navigate('Login')}
+              >
+                <Text style={styles.backToLoginText}>Remember your password? Sign In</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </Card>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -176,18 +301,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: radii.xl,
-    backgroundColor: 'rgba(0, 168, 150, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.m,
-  },
-  logoIcon: {
-    fontSize: 32,
-  },
   brandTitle: {
     ...typography.h2,
     color: colors.ink,
@@ -213,6 +326,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     marginBottom: spacing.l,
   },
+  centerText: {
+    textAlign: 'center',
+  },
+  highlightText: {
+    color: colors.teal,
+    fontWeight: '700',
+  },
+  boldText: {
+    fontWeight: '700',
+  },
   errorBox: {
     backgroundColor: '#fef2f2',
     borderWidth: 1,
@@ -226,29 +349,134 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  successBox: {
-    backgroundColor: '#f0fdf4',
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f0fdfa',
     borderWidth: 1,
-    borderColor: '#86efac',
+    borderColor: '#99f6e4',
     borderRadius: radii.m,
     padding: spacing.m,
     marginBottom: spacing.m,
   },
-  successText: {
-    color: '#166534',
-    fontSize: 13,
-    fontWeight: '600',
+  infoBannerDark: {
+    backgroundColor: '#042f2e',
+    borderColor: '#0d9488',
+  },
+  infoBannerIcon: {
+    fontSize: 16,
+    marginRight: spacing.s,
+    marginTop: 1,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#0f766e',
+    fontWeight: '500',
+  },
+  infoBannerTextDark: {
+    color: '#5eead4',
   },
   submitBtn: {
-    marginTop: spacing.m,
+    marginTop: spacing.s,
   },
-  hasTokenLink: {
+  backToLoginLink: {
     marginTop: spacing.l,
     alignItems: 'center',
   },
-  hasTokenText: {
+  backToLoginText: {
     color: colors.teal,
     fontWeight: '600',
     fontSize: 13,
+  },
+  sentContainer: {
+    alignItems: 'center',
+  },
+  iconBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: radii.xl,
+    backgroundColor: 'rgba(0, 168, 150, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.m,
+  },
+  iconBadgeText: {
+    fontSize: 32,
+  },
+  instructionsBox: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderRadius: radii.m,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: spacing.m,
+    marginVertical: spacing.m,
+  },
+  instructionsBoxDark: {
+    backgroundColor: '#0f2930',
+    borderColor: '#1e3a42',
+  },
+  instructionStepTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.ink,
+    marginBottom: spacing.s,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xs,
+  },
+  stepNumber: {
+    width: 20,
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.teal,
+  },
+  stepText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.gray600,
+  },
+  stepTextDark: {
+    color: '#94a3b8',
+  },
+  expiryNote: {
+    marginBottom: spacing.m,
+  },
+  expiryText: {
+    fontSize: 12,
+    color: colors.gray500,
+    fontStyle: 'italic',
+  },
+  actionBtn: {
+    width: '100%',
+    marginTop: spacing.s,
+  },
+  resendLink: {
+    marginTop: spacing.l,
+    paddingVertical: spacing.xs,
+    alignItems: 'center',
+  },
+  resendText: {
+    color: colors.teal,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  disabledText: {
+    color: colors.gray500,
+  },
+  diffEmailLink: {
+    marginTop: spacing.s,
+    paddingVertical: spacing.xs,
+    alignItems: 'center',
+  },
+  diffEmailText: {
+    color: colors.gray500,
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
 });

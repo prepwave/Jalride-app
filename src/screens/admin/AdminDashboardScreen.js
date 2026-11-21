@@ -23,6 +23,7 @@ export default function AdminDashboardScreen({ navigation }) {
   const { user } = useAuth();
   const { isDark } = useTheme();
   const [stats, setStats] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const [boatCount, setBoatCount] = useState(0);
   const [userCount, setUserCount] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
@@ -31,19 +32,22 @@ export default function AdminDashboardScreen({ navigation }) {
 
   const loadData = async () => {
     try {
-      const [statsRes, boatsRes, usersRes, refundsRes] = await Promise.allSettled([
+      const [statsRes, analyticsRes, boatsRes, usersRes, refundsRes] = await Promise.allSettled([
         api.getAdminStats(),
+        api.getAdminAnalyticsDashboard ? api.getAdminAnalyticsDashboard() : Promise.resolve(null),
         api.getAdminBoats(),
         api.getAdminUsers(),
         api.getAdminRefundRequests(),
       ]);
 
-      const s = statsRes.status === 'fulfilled' ? statsRes.value : {};
+      const s = statsRes.status === 'fulfilled' && statsRes.value ? statsRes.value : {};
+      const a = analyticsRes.status === 'fulfilled' && analyticsRes.value ? analyticsRes.value : null;
       const b = boatsRes.status === 'fulfilled' && Array.isArray(boatsRes.value) ? boatsRes.value : [];
       const u = usersRes.status === 'fulfilled' && Array.isArray(usersRes.value) ? usersRes.value : [];
       const r = refundsRes.status === 'fulfilled' && Array.isArray(refundsRes.value) ? refundsRes.value : [];
 
       setStats(s);
+      setAnalytics(a);
       setBoatCount(s.totalBoats !== undefined ? s.totalBoats : b.length);
       setUserCount(
         (s.totalUsers !== undefined && s.totalOwners !== undefined)
@@ -111,25 +115,51 @@ export default function AdminDashboardScreen({ navigation }) {
         {/* Platform Revenue & Commission KPI Card */}
         <View style={styles.revenueCard}>
           <Text style={styles.revenueLabel}>PLATFORM GROSS BOOKING VALUE</Text>
-          <Text style={styles.revenueValue}>₹{(stats?.totalRevenue ?? 0).toLocaleString('en-IN')}</Text>
+          <Text style={styles.revenueValue}>
+            {typeof stats?.totalRevenue === 'number'
+              ? `₹${stats.totalRevenue.toLocaleString('en-IN')}`
+              : typeof analytics?.platformRevenue?.total === 'number'
+              ? `₹${analytics.platformRevenue.total.toLocaleString('en-IN')}`
+              : 'N/A'}
+          </Text>
 
           <View style={styles.kpiRow}>
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>₹{(stats?.platformCommissionRevenue ?? Math.round((stats?.totalRevenue ?? 0) * 0.10)).toLocaleString('en-IN')}</Text>
+              <Text style={styles.kpiVal}>
+                {typeof stats?.platformCommissionRevenue === 'number'
+                  ? `₹${stats.platformCommissionRevenue.toLocaleString('en-IN')}`
+                  : typeof analytics?.commission?.total === 'number'
+                  ? `₹${analytics.commission.total.toLocaleString('en-IN')}`
+                  : 'N/A'}
+              </Text>
               <Text style={styles.kpiLbl}>Retained Commission</Text>
             </View>
 
             <View style={styles.kpiDivider} />
 
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>₹{(stats?.gstCollected ?? Math.round((stats?.platformCommissionRevenue ?? Math.round((stats?.totalRevenue ?? 0) * 0.10)) * 0.18)).toLocaleString('en-IN')}</Text>
+              <Text style={styles.kpiVal}>
+                {typeof stats?.gstCollected === 'number'
+                  ? `₹${stats.gstCollected.toLocaleString('en-IN')}`
+                  : typeof analytics?.commission?.totalGst === 'number'
+                  ? `₹${analytics.commission.totalGst.toLocaleString('en-IN')}`
+                  : 'N/A'}
+              </Text>
               <Text style={styles.kpiLbl}>GST Pool Collected</Text>
             </View>
 
             <View style={styles.kpiDivider} />
 
             <View style={styles.kpiCol}>
-              <Text style={styles.kpiVal}>{stats?.todayBookings ?? stats?.totalBookings ?? 0}</Text>
+              <Text style={styles.kpiVal}>
+                {typeof stats?.todayBookings === 'number'
+                  ? stats.todayBookings
+                  : typeof stats?.totalBookings === 'number'
+                  ? stats.totalBookings
+                  : typeof analytics?.commission?.bookingCount === 'number'
+                  ? analytics.commission.bookingCount
+                  : 'N/A'}
+              </Text>
               <Text style={styles.kpiLbl}>Total Rides</Text>
             </View>
           </View>
@@ -152,7 +182,7 @@ export default function AdminDashboardScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.attentionCard}
-            onPress={() => Alert.alert('Refunds Queue', `${pendingRefunds} customer refund requests pending review.`)}
+            onPress={() => navigation.navigate('AdminRefunds')}
           >
             <View style={styles.rowBetween}>
               <Text style={styles.attentionIcon}>🔄</Text>
@@ -164,11 +194,11 @@ export default function AdminDashboardScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.attentionCard}
-            onPress={() => Alert.alert('KYC Audit Queue', 'All pending operator and captain KYC records are up to date.')}
+            onPress={() => navigation.navigate('AdminKyc')}
           >
             <View style={styles.rowBetween}>
               <Text style={styles.attentionIcon}>🪪</Text>
-              <Badge label="Active" variant="info" size="small" />
+              <Badge label="Audit Queue" variant="info" size="small" />
             </View>
             <Text style={styles.attentionTitle}>KYC Review Queue</Text>
             <Text style={styles.attentionSub}>Aadhaar & Captain License audit</Text>
@@ -176,20 +206,48 @@ export default function AdminDashboardScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.attentionCard}
-            onPress={() => navigation.navigate('AdminSettings')}
+            onPress={() => navigation.navigate('AdminCommissionSettings')}
           >
             <View style={styles.rowBetween}>
-              <Text style={styles.attentionIcon}>⚙️</Text>
-              <Badge label="Active" variant="success" size="small" />
+              <Text style={styles.attentionIcon}>⚖️</Text>
+              <Badge label="Policy" variant="success" size="small" />
             </View>
             <Text style={styles.attentionTitle}>Rates & Commission</Text>
-            <Text style={styles.attentionSub}>Cash & Online split rules</Text>
+            <Text style={styles.attentionSub}>Online/Cash split & GST rules</Text>
           </TouchableOpacity>
         </View>
 
         {/* Platform Overview Modules */}
         <Text style={[styles.sectionTitle, isDark && styles.textLight]}>Management Consoles</Text>
         <Card style={styles.menuCard}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('AdminBookings')}
+          >
+            <Text style={styles.menuItemIcon}>📋</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuItemTitle, isDark && styles.textLight]}>Universal Booking Ledger</Text>
+              <Text style={styles.menuItemSub}>Search all platform rides, tickets & walk-in QR passes</Text>
+            </View>
+            <Text style={styles.menuArrow}>→</Text>
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('AdminSettlements')}
+          >
+            <Text style={styles.menuItemIcon}>💳</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuItemTitle, isDark && styles.textLight]}>Owner Payout Settlements</Text>
+              <Text style={styles.menuItemSub}>Authorize withdrawals, check bank IFSC & record UTRs</Text>
+            </View>
+            <Text style={styles.menuArrow}>→</Text>
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => navigation.navigate('AdminBoats')}
@@ -212,6 +270,20 @@ export default function AdminDashboardScreen({ navigation }) {
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuItemTitle, isDark && styles.textLight]}>User Directory ({userCount} Accounts)</Text>
               <Text style={styles.menuItemSub}>Inspect accounts, verify emails & toggle active</Text>
+            </View>
+            <Text style={styles.menuArrow}>→</Text>
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('AdminCommissionSettings')}
+          >
+            <Text style={styles.menuItemIcon}>⚖️</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuItemTitle, isDark && styles.textLight]}>Commission & Financial Settings</Text>
+              <Text style={styles.menuItemSub}>Authoritative platform commission, GST toggle, hold period & owner overrides</Text>
             </View>
             <Text style={styles.menuArrow}>→</Text>
           </TouchableOpacity>

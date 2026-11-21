@@ -1,7 +1,9 @@
+// @ts-nocheck
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MOCK_GHATS } from './mockData';
 
-const BASE_URL = 'https://jalride-backend.onrender.com/api';
+const RAW_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://jalride-backend.onrender.com/api';
+const BASE_URL = RAW_BASE_URL.replace(/\/+$/, '');
 
 const TOKEN_KEY = 'jalride_native_token';
 const REFRESH_KEY = 'jalride_native_refresh_token';
@@ -80,9 +82,12 @@ class ApiService {
   }
 
   async request(path, options = {}) {
-    const url = `${BASE_URL}${path}`;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const url = `${BASE_URL}${normalizedPath}`;
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
     const headers = {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(options.headers || {}),
     };
 
@@ -97,7 +102,13 @@ class ApiService {
       const response = await fetch(url, {
         method: options.method || 'GET',
         headers,
-        body: options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : undefined,
+        body: options.body
+          ? (isFormData
+              ? options.body
+              : typeof options.body === 'string'
+              ? options.body
+              : JSON.stringify(options.body))
+          : undefined,
         signal: controller.signal,
       });
 
@@ -403,9 +414,9 @@ class ApiService {
 
   // DPDP Act 2023: Right to Erasure / Personal Data Deletion Request
   async requestDataErasure(reason = 'User requested DPDP account deletion') {
-    return this.request('/auth/delete-account', {
+    return this.request('/privacy/request', {
       method: 'POST',
-      body: { reason },
+      body: { requestType: 'data_erasure', reason },
     });
   }
 
@@ -413,13 +424,42 @@ class ApiService {
   // Instant Ghat QR Booking (qr-book.html)
   // ==========================================
   async getLiveBoatStatusForQr(boatId) {
-    return this.request(`/qr/${boatId}/status`);
+    const cleanId = String(boatId || '').trim();
+    return this.request(`/qr/${encodeURIComponent(cleanId)}/status`);
   }
 
   async bookInstantQr(boatId, payload) {
-    return this.request(`/qr/${boatId}/book`, {
+    const cleanId = String(boatId || '').trim();
+    return this.request(`/qr/${encodeURIComponent(cleanId)}/book`, {
       method: 'POST',
       body: payload,
+    });
+  }
+
+  async verifyInstantPayment(payload) {
+    return this.request('/qr/verify-payment', {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  async getOwnerQrPosters() {
+    const res = await this.request('/owner/qr/my-posters');
+    return Array.isArray(res?.posters) ? res.posters : [];
+  }
+
+  async toggleBoatQrBooking(boatId) {
+    const cleanId = String(boatId || '').trim();
+    return this.request(`/owner/qr/${encodeURIComponent(cleanId)}/toggle`, {
+      method: 'PUT',
+    });
+  }
+
+  async updateBoatLiveStatus(boatId, status) {
+    const cleanId = String(boatId || '').trim();
+    return this.request(`/owner/qr/${encodeURIComponent(cleanId)}/status`, {
+      method: 'PUT',
+      body: { status },
     });
   }
 
@@ -428,8 +468,22 @@ class ApiService {
     try {
       if (typeof qrData === 'object' && qrData !== null) {
         payload = qrData;
-      } else if (typeof qrData === 'string' && qrData.trim().startsWith('{')) {
-        payload = JSON.parse(qrData);
+      } else if (typeof qrData === 'string') {
+        const s = qrData.trim();
+        if (s.startsWith('{')) {
+          payload = JSON.parse(s);
+        } else if (s.includes('ticketId=') || s.includes('bookingId=') || s.includes('v=')) {
+          const mTicket = s.match(/[?&]ticketId=([^&#]+)/i);
+          const mBooking = s.match(/[?&]bookingId=([^&#]+)/i) || s.match(/[?&]booking=([^&#]+)/i) || s.match(/[?&]id=([^&#]+)/i);
+          const mV = s.match(/[?&]v=([^&#]+)/i);
+          payload = {
+            ticketId: mTicket ? decodeURIComponent(mTicket[1]) : undefined,
+            bookingId: mBooking ? decodeURIComponent(mBooking[1]) : undefined,
+            v: mV ? decodeURIComponent(mV[1]) : undefined,
+          };
+        } else if (s.startsWith('JR-')) {
+          payload = { ticketId: s };
+        }
       }
     } catch (e) {
       payload = null;
@@ -446,16 +500,20 @@ class ApiService {
       });
     }
 
-    let ticketId = typeof qrData === 'string' ? qrData : '';
+    let ticketId = payload?.ticketId || (typeof qrData === 'string' ? qrData : '');
     if (ticketId.includes('JALRIDE:TICKET:')) {
       const parts = ticketId.split(':');
       ticketId = parts[2] || parts[1] || ticketId;
     }
 
-    return this.request('/bookings/verify-ticket-id', {
-      method: 'POST',
-      body: { ticketId: ticketId.trim() },
-    });
+    if (ticketId && ticketId.trim()) {
+      return this.request('/bookings/verify-ticket-id', {
+        method: 'POST',
+        body: { ticketId: ticketId.trim() },
+      });
+    }
+
+    throw new Error('Invalid ticket QR code format.');
   }
 
   async verifyTicketById(ticketId) {
@@ -471,9 +529,31 @@ class ApiService {
   async getCustomerWallet() {
     try {
       const res = await this.request('/customer/wallet');
-      return res.wallet || res.data || { balance: 0, cashbackEarned: 0, loyaltyPoints: 0, transactions: [] };
+      return {
+        balance: res.wallet?.balance ?? 0,
+        reservedForWithdrawal: res.wallet?.reservedForWithdrawal ?? 0,
+        cashbackEarned: res.wallet?.cashbackEarned ?? 0,
+        loyaltyPoints: res.wallet?.loyaltyPoints ?? 0,
+        totalRefunded: res.wallet?.totalRefunded ?? 0,
+        totalSpent: res.wallet?.totalSpent ?? 0,
+        minWithdrawAmount: res.minWithdrawAmount ?? 100,
+        cashbackPercent: res.cashbackPercent ?? 5,
+        wallet: res.wallet || {},
+        transactions: res.wallet?.transactions || [],
+      };
     } catch (e) {
-      return { balance: 0, cashbackEarned: 0, loyaltyPoints: 0, transactions: [] };
+      return {
+        balance: 0,
+        reservedForWithdrawal: 0,
+        cashbackEarned: 0,
+        loyaltyPoints: 0,
+        totalRefunded: 0,
+        totalSpent: 0,
+        minWithdrawAmount: 100,
+        cashbackPercent: 5,
+        wallet: {},
+        transactions: [],
+      };
     }
   }
 
@@ -501,7 +581,8 @@ class ApiService {
   }
 
   async getCustomerBankAccounts() {
-    return this.request('/customer/bank-accounts');
+    const res = await this.request('/customer/bank-accounts');
+    return Array.isArray(res?.accounts) ? res.accounts : (Array.isArray(res?.data) ? res.data : []);
   }
 
   async addCustomerBankAccount(payload) {
@@ -511,11 +592,60 @@ class ApiService {
     });
   }
 
+  async setPrimaryCustomerBankAccount(id) {
+    return this.request(`/customer/bank-accounts/${id}/primary`, {
+      method: 'PUT',
+    });
+  }
+
+  async deleteCustomerBankAccount(id) {
+    return this.request(`/customer/bank-accounts/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async requestCustomerWithdrawal(amount, bankAccountId) {
     return this.request('/customer/wallet/withdrawals', {
       method: 'POST',
       body: { amount, bankAccountId },
     });
+  }
+
+  async getCustomerWithdrawals(page = 1) {
+    try {
+      const res = await this.request(`/customer/wallet/withdrawals?page=${page}`);
+      return Array.isArray(res?.withdrawals) ? res.withdrawals : (Array.isArray(res?.data) ? res.data : []);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // ==========================================
+  // Reviews APIs
+  // ==========================================
+  async submitReview({ boatId, bookingId, rating, review }) {
+    return this.request('/reviews', {
+      method: 'POST',
+      body: { boatId, bookingId, rating, review },
+    });
+  }
+
+  async getBookingReview(bookingId) {
+    try {
+      const res = await this.request(`/reviews/booking/${bookingId}`);
+      return res?.review || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async getBoatReviews(boatId) {
+    try {
+      const res = await this.request(`/boats/${boatId}/reviews`);
+      return res?.reviews || [];
+    } catch (e) {
+      return [];
+    }
   }
 
   async getLoyaltySummary() {
@@ -569,30 +699,14 @@ class ApiService {
   // Boat Owner Operations APIs
   // ==========================================
   async getOwnerDashboard() {
-    try {
-      const res = await this.request('/owner/dashboard');
-      return res.stats || res.data || {
-        totalEarnings: 0,
-        availableBalance: 0,
-        pendingWithdrawals: 0,
-        todayTrips: 0,
-        totalBookings: 0,
-        activeBoats: 0,
-        dueCommissions: 0,
-        rating: 5.0,
-      };
-    } catch (e) {
-      return {
-        totalEarnings: 0,
-        availableBalance: 0,
-        pendingWithdrawals: 0,
-        todayTrips: 0,
-        totalBookings: 0,
-        activeBoats: 0,
-        dueCommissions: 0,
-        rating: 5.0,
-      };
-    }
+    const res = await this.request('/owner/dashboard');
+    return res.dashboard || res.stats || res.data || {
+      totalBoats: 0,
+      totalEarnings: 0,
+      totalPaidRides: 0,
+      bookingStatusCounts: { pending: 0, confirmed: 0, cancelled: 0, completed: 0 },
+      recentBookings: [],
+    };
   }
 
   async getOwnerBoats() {
@@ -622,6 +736,26 @@ class ApiService {
   async deleteBoat(boatId) {
     return this.request(`/owner/boats/${boatId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async deleteBoatImage(boatId, index) {
+    return this.request(`/owner/boats/${boatId}/images/${index}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async updateBoatPreferences(boatId, payload) {
+    return this.request(`/owner/boats/${boatId}/preferences`, {
+      method: 'PUT',
+      body: payload,
+    });
+  }
+
+  async updateBoatFare(boatId, price) {
+    return this.request(`/owner/boats/${boatId}/fare`, {
+      method: 'PUT',
+      body: { price },
     });
   }
 
@@ -661,13 +795,191 @@ class ApiService {
     return this.request(`/owner/bookings/${bookingId}/complete-ride`, { method: 'PUT' });
   }
 
+  // ==========================================
+  // Boat Owner Availability & Scheduling APIs
+  // ==========================================
+  async updateBoatStatus(boatId, status) {
+    return this.request(`/owner/boats/${boatId}`, {
+      method: 'PUT',
+      body: { status },
+    });
+  }
+
+  async getOwnerBoatCalendar(boatId, month) {
+    const q = month ? `?month=${encodeURIComponent(month)}` : '';
+    return this.request(`/owner/availability/${boatId}/calendar${q}`);
+  }
+
+  async getOwnerBoatDayDetail(boatId, date) {
+    return this.request(`/owner/availability/${boatId}/day/${encodeURIComponent(date)}`);
+  }
+
+  async setBoatBulkAvailability(boatId, payload) {
+    return this.request(`/owner/availability/${boatId}/bulk`, {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  async setBoatClosedDates(boatId, payload) {
+    return this.request(`/owner/availability/${boatId}/closed-dates`, {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  async setBoatMaintenance(boatId, payload) {
+    return this.request(`/owner/availability/${boatId}/maintenance`, {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  async deleteBoatDateOverride(boatId, date) {
+    return this.request(`/owner/availability/${boatId}/day/${encodeURIComponent(date)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async setBoatDatePriceOverride(boatId, date, price) {
+    return this.request(`/owner/availability/${boatId}/day/${encodeURIComponent(date)}/price`, {
+      method: 'PUT',
+      body: { price },
+    });
+  }
+
+  async listBoatRecurringSchedules(boatId) {
+    return this.request(`/owner/availability/${boatId}/recurring`);
+  }
+
+  async createBoatRecurringSchedule(boatId, payload) {
+    return this.request(`/owner/availability/${boatId}/recurring`, {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  async updateBoatRecurringSchedule(boatId, scheduleId, payload) {
+    return this.request(`/owner/availability/${boatId}/recurring/${scheduleId}`, {
+      method: 'PUT',
+      body: payload,
+    });
+  }
+
+  async deleteBoatRecurringSchedule(boatId, scheduleId) {
+    return this.request(`/owner/availability/${boatId}/recurring/${scheduleId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listBoatPricingRules(boatId) {
+    return this.request(`/owner/availability/${boatId}/pricing-rules`);
+  }
+
+  async createBoatPricingRule(boatId, payload) {
+    return this.request(`/owner/availability/${boatId}/pricing-rules`, {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  async updateBoatPricingRule(boatId, ruleId, payload) {
+    return this.request(`/owner/availability/${boatId}/pricing-rules/${ruleId}`, {
+      method: 'PUT',
+      body: payload,
+    });
+  }
+
+  async deleteBoatPricingRule(boatId, ruleId) {
+    return this.request(`/owner/availability/${boatId}/pricing-rules/${ruleId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async previewBoatPrice(boatId, date, time) {
+    const q = `?date=${encodeURIComponent(date)}&time=${encodeURIComponent(time)}`;
+    return this.request(`/owner/availability/${boatId}/preview-price${q}`);
+  }
+
+  async setBoatTimezone(boatId, timezone) {
+    return this.request(`/owner/availability/${boatId}/timezone`, {
+      method: 'PUT',
+      body: { timezone },
+    });
+  }
+
   async getOwnerWallet() {
-    try {
-      const res = await this.request('/owner/wallet');
-      return res || { availableBalance: 0, dueCommissions: 0, pendingWithdrawals: 0 };
-    } catch (e) {
-      return { availableBalance: 0, dueCommissions: 0, pendingWithdrawals: 0 };
-    }
+    const res = await this.request('/owner/wallet');
+    const w = res.wallet || {};
+    return {
+      availableBalance: w.availableBalance ?? 0,
+      pendingAmount: w.pendingAmount ?? 0,
+      reservedForWithdrawal: w.reservedForWithdrawal ?? 0,
+      walletBalance: w.walletBalance ?? 0,
+      totalEarned: w.totalEarned ?? 0,
+      totalWithdrawn: w.totalWithdrawn ?? 0,
+      totalCommissionPaid: w.totalCommissionPaid ?? 0,
+      pendingBreakdown: Array.isArray(w.pendingBreakdown) ? w.pendingBreakdown : [],
+      commissionRate: typeof res.commissionRate === 'number' ? res.commissionRate : null,
+      minWithdrawAmount: typeof res.minWithdrawAmount === 'number' ? res.minWithdrawAmount : (typeof w.minWithdrawAmount === 'number' ? w.minWithdrawAmount : null),
+      payoutHoldDays: typeof res.payoutHoldDays === 'number' ? res.payoutHoldDays : (typeof w.payoutHoldDays === 'number' ? w.payoutHoldDays : null),
+      raw: res,
+    };
+  }
+
+  async getOwnerWalletTransactions(page = 1, limit = 20) {
+    const res = await this.request(`/owner/wallet/transactions?page=${page}&limit=${limit}`);
+    return {
+      transactions: Array.isArray(res.transactions) ? res.transactions : [],
+      total: res.total || 0,
+      page: res.page || page,
+      totalPages: res.totalPages || 1,
+      hasNext: Boolean(res.hasNext),
+      hasPrev: Boolean(res.hasPrev),
+    };
+  }
+
+  async getOwnerBankAccounts() {
+    const res = await this.request('/owner/bank-accounts');
+    return Array.isArray(res.accounts) ? res.accounts : [];
+  }
+
+  async addOwnerBankAccount(payload) {
+    return this.request('/owner/bank-accounts', {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  async setPrimaryOwnerBankAccount(id) {
+    return this.request(`/owner/bank-accounts/${id}/primary`, {
+      method: 'PUT',
+    });
+  }
+
+  async deleteOwnerBankAccount(id) {
+    return this.request(`/owner/bank-accounts/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async requestOwnerWithdrawal(amount, bankAccountId) {
+    return this.request('/owner/withdrawals', {
+      method: 'POST',
+      body: { amount: Number(amount), bankAccountId },
+    });
+  }
+
+  async getOwnerWithdrawals(page = 1, limit = 20) {
+    const res = await this.request(`/owner/withdrawals?page=${page}&limit=${limit}`);
+    return {
+      withdrawals: Array.isArray(res.withdrawals) ? res.withdrawals : [],
+      total: res.total || 0,
+      page: res.page || page,
+      totalPages: res.totalPages || 1,
+      hasNext: Boolean(res.hasNext),
+      hasPrev: Boolean(res.hasPrev),
+    };
   }
 
   async getOwnerKyc() {
@@ -675,27 +987,10 @@ class ApiService {
   }
 
   async uploadKycDocument(formData) {
-    const url = `${BASE_URL}/kyc/documents`;
-    const headers = {};
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-    const res = await fetch(url, {
+    return this.request('/kyc/documents', {
       method: 'POST',
-      headers,
       body: formData,
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.message || `KYC upload failed (${res.status})`);
-    }
-    return data;
-  }
-
-  async requestOwnerWithdrawal(amount) {
-    return this.request('/owner/withdrawals', {
-      method: 'POST',
-      body: { amount },
+      timeout: 60000,
     });
   }
 
@@ -712,23 +1007,20 @@ class ApiService {
   async getAdminStats() {
     try {
       const res = await this.request('/admin/stats');
-      return res.stats || res.data || {
-        totalRevenue: 0,
-        platformCommissionRevenue: 0,
-        gstCollected: 0,
-        todayBookings: 0,
-        activeBoats: 0,
-        totalUsers: 0,
-      };
+      return res.stats || res.data || null;
     } catch (e) {
-      return {
-        totalRevenue: 0,
-        platformCommissionRevenue: 0,
-        gstCollected: 0,
-        todayBookings: 0,
-        activeBoats: 0,
-        totalUsers: 0,
-      };
+      console.warn('[JalAPI] Error fetching admin stats:', e.message);
+      return null;
+    }
+  }
+
+  async getAdminAnalyticsDashboard(from, to) {
+    try {
+      const q = from && to ? `?from=${from}&to=${to}` : '';
+      return await this.request(`/admin/analytics-dashboard${q}`);
+    } catch (e) {
+      console.warn('[JalAPI] Error fetching admin analytics dashboard:', e.message);
+      return null;
     }
   }
 
@@ -749,9 +1041,10 @@ class ApiService {
     return this.request(`/admin/boats/${boatId}/reject`, { method: 'PUT', body: { reason } });
   }
 
-  async getAdminUsers() {
+  async getAdminUsers(role, page = 1, limit = 50) {
     try {
-      const res = await this.request('/admin/users');
+      const q = role ? `?role=${encodeURIComponent(role)}&page=${page}&limit=${limit}` : `?page=${page}&limit=${limit}`;
+      const res = await this.request(`/admin/users${q}`);
       return res.users || res.data || [];
     } catch (e) {
       return [];
@@ -766,9 +1059,36 @@ class ApiService {
     return this.request(`/admin/users/${userId}/verify-email`, { method: 'PUT' });
   }
 
+  // ==========================================
+  // Universal Booking Ledger APIs
+  // ==========================================
+  async getAdminUniversalBookings(page = 1, limit = 25, filter = {}) {
+    let q = `?page=${page}&limit=${limit}`;
+    if (filter.status && filter.status !== 'all') q += `&status=${encodeURIComponent(filter.status)}`;
+    if (filter.search) q += `&search=${encodeURIComponent(filter.search)}`;
+    const res = await this.request(`/admin/bookings${q}`);
+    return {
+      bookings: Array.isArray(res?.bookings) ? res.bookings : [],
+      total: res?.total || res?.count || 0,
+      page: res?.page || page,
+      totalPages: res?.totalPages || 1,
+    };
+  }
+
+  async adminCancelBooking(bookingId, reason = 'Administrative cancellation') {
+    return this.request(`/admin/bookings/${bookingId}/cancel`, {
+      method: 'PUT',
+      body: { reason },
+    });
+  }
+
+  // ==========================================
+  // Admin Refunds Escrow Queue APIs
+  // ==========================================
   async getAdminRefundRequests() {
     try {
-      return await this.request('/admin/refunds') || [];
+      const res = await this.request('/admin/refunds');
+      return Array.isArray(res?.bookings) ? res.bookings : (Array.isArray(res) ? res : []);
     } catch (e) {
       return [];
     }
@@ -776,6 +1096,86 @@ class ApiService {
 
   async approveRefund(refundId) {
     return this.request(`/admin/refunds/${refundId}/approve`, { method: 'PUT' });
+  }
+
+  async rejectRefund(refundId, reason = 'Refund request rejected by platform administrator') {
+    return this.request(`/admin/refunds/${refundId}/reject`, {
+      method: 'PUT',
+      body: { reason },
+    });
+  }
+
+  // ==========================================
+  // Admin KYC Documents Queue APIs
+  // ==========================================
+  async getAdminKycDocuments(status = 'pending', page = 1, limit = 25) {
+    try {
+      let q = `?page=${page}&limit=${limit}`;
+      if (status && status !== 'all') q += `&status=${encodeURIComponent(status)}`;
+      const res = await this.request(`/admin/kyc/documents${q}`);
+      return {
+        documents: Array.isArray(res?.documents) ? res.documents : [],
+        total: res?.total || res?.count || 0,
+        page: res?.page || page,
+        totalPages: res?.totalPages || 1,
+      };
+    } catch (e) {
+      return { documents: [], total: 0, page: 1, totalPages: 1 };
+    }
+  }
+
+  async approveAdminKyc(documentId) {
+    return this.request(`/admin/kyc/documents/${documentId}/approve`, {
+      method: 'PUT',
+    });
+  }
+
+  async rejectAdminKyc(documentId, reason = 'Document rejected by platform auditor') {
+    return this.request(`/admin/kyc/documents/${documentId}/reject`, {
+      method: 'PUT',
+      body: { reason },
+    });
+  }
+
+  // ==========================================
+  // Admin Owner Withdrawal Payout Queue APIs
+  // ==========================================
+  async getAdminWithdrawals(status = 'pending', page = 1, limit = 25) {
+    try {
+      let q = `?page=${page}&limit=${limit}`;
+      if (status && status !== 'all') q += `&status=${encodeURIComponent(status)}`;
+      const res = await this.request(`/admin/withdrawals${q}`);
+      return {
+        withdrawals: Array.isArray(res?.withdrawals) ? res.withdrawals : [],
+        total: res?.total || res?.count || 0,
+        page: res?.page || page,
+        totalPages: res?.totalPages || 1,
+      };
+    } catch (e) {
+      return { withdrawals: [], total: 0, page: 1, totalPages: 1 };
+    }
+  }
+
+  async approveAdminWithdrawal(withdrawalId, adminNote = '', transactionReference = '') {
+    return this.request(`/admin/withdrawals/${withdrawalId}/approve`, {
+      method: 'PUT',
+      body: { adminNote, transactionReference },
+    });
+  }
+
+  async rejectAdminWithdrawal(withdrawalId, reason = 'Withdrawal request rejected by administrator') {
+    return this.request(`/admin/withdrawals/${withdrawalId}/reject`, {
+      method: 'PUT',
+      body: { reason },
+    });
+  }
+
+  async getAdminSettlementsReport() {
+    try {
+      return await this.request('/admin/settlements');
+    } catch (e) {
+      return null;
+    }
   }
 
   async getAdminCoupons() {
@@ -796,16 +1196,11 @@ class ApiService {
 
   async getPlatformSettings() {
     try {
-      return await this.request('/admin/settings');
+      const res = await this.request('/admin/settings');
+      return res?.settings || res || null;
     } catch (e) {
-      return {
-        defaultCommissionRate: 15,
-        onlineCommissionRate: 10,
-        cashCommissionRate: 12,
-        commissionGstRate: 18,
-        cashbackPercent: 10,
-        payoutHoldDays: 3,
-      };
+      console.warn('[JalAPI] Error fetching platform settings:', e.message);
+      return null;
     }
   }
 
@@ -813,6 +1208,23 @@ class ApiService {
     return this.request('/admin/settings', {
       method: 'PUT',
       body: settings,
+    });
+  }
+
+  async setOwnerCommissionRate(ownerId, commissionRate) {
+    const rate = commissionRate !== null && commissionRate !== undefined && commissionRate !== ''
+      ? Number(commissionRate)
+      : null;
+    return this.request(`/admin/owners/${ownerId}/commission-rate`, {
+      method: 'PUT',
+      body: { commissionRate: rate },
+    });
+  }
+
+  async updateGlobalCommission(payload) {
+    return this.request('/admin/commission/global', {
+      method: 'PUT',
+      body: payload,
     });
   }
 }
