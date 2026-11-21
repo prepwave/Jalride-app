@@ -12,6 +12,7 @@ import {
   Modal,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useIsFocused } from '@react-navigation/native';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +24,7 @@ import Badge from '../../components/common/Badge';
 import RazorpayCheckoutModal from '../../components/payment/RazorpayCheckoutModal';
 
 export default function QrScanScreen({ navigation }) {
+  const isFocused = useIsFocused();
   const { isDark } = useTheme();
   const { user } = useAuth();
   const [torchOn, setTorchOn] = useState(false);
@@ -470,18 +472,13 @@ export default function QrScanScreen({ navigation }) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {/* Live Camera View if permission granted */}
-      {permission?.granted ? (
-        <CameraView
-          style={StyleSheet.absoluteFillObject}
-          facing="back"
-          enableTorch={torchOn}
-          onBarcodeScanned={handleBarcodeScanned}
-          barcodeScannerSettings={{
-            barcodeTypes: ['qr'],
-          }}
-        />
-      ) : (
+      {/* Live Camera View if permission granted & screen focused */}
+      {permission === null ? (
+        <View style={styles.permissionFallback}>
+          <ActivityIndicator size="large" color={colors.teal} />
+          <Text style={styles.permissionSubtitle}>Initializing Camera...</Text>
+        </View>
+      ) : !permission.granted ? (
         <View style={styles.permissionFallback}>
           <Text style={styles.permissionEmoji}>📷</Text>
           <Text style={styles.permissionTitle}>Camera Permission Required</Text>
@@ -500,6 +497,18 @@ export default function QrScanScreen({ navigation }) {
             <Text style={styles.manualFallbackBtnText}>⌨️ Enter Ticket ID or Boat Code Manually</Text>
           </TouchableOpacity>
         </View>
+      ) : isFocused && !showRazorpayModal ? (
+        <CameraView
+          style={styles.cameraPreview}
+          facing="back"
+          enableTorch={torchOn}
+          onBarcodeScanned={isScanningActive ? handleBarcodeScanned : undefined}
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr'],
+          }}
+        />
+      ) : (
+        <View style={styles.cameraPreview} />
       )}
 
       {/* Top Header overlay */}
@@ -523,6 +532,11 @@ export default function QrScanScreen({ navigation }) {
 
       {/* Viewfinder Target Area */}
       <View style={styles.scannerWrapper} pointerEvents="box-none">
+        <View style={styles.instructionTopBox} pointerEvents="none">
+          <Text style={styles.scannerTitle}>Align the boat QR code within the frame</Text>
+          <Text style={styles.scannerSubtitle}>Keep your camera steady to scan</Text>
+        </View>
+
         <View style={styles.viewfinder}>
           {/* 4 Framing Corner Accents */}
           <View style={[styles.corner, styles.cornerTL]} />
@@ -538,10 +552,6 @@ export default function QrScanScreen({ navigation }) {
             ]}
           />
         </View>
-
-        <Text style={styles.scannerHint}>
-          Align the QR code from the boat standee or boarding ticket inside the frame.
-        </Text>
 
         {/* Manual Recovery Button */}
         <TouchableOpacity
@@ -715,7 +725,13 @@ export default function QrScanScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a1e23',
+    backgroundColor: '#000000',
+  },
+  cameraPreview: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
   },
   permissionFallback: {
     ...StyleSheet.absoluteFillObject,
@@ -723,6 +739,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.xl,
     backgroundColor: '#0a1e23',
+    zIndex: 20,
   },
   permissionEmoji: {
     fontSize: 52,
@@ -810,7 +827,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   torchBtn: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.25)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radii.full,
@@ -821,25 +838,49 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   scannerWrapper: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
+    zIndex: 2,
+  },
+  instructionTopBox: {
+    marginBottom: spacing.l,
+    alignItems: 'center',
+    paddingHorizontal: spacing.m,
+  },
+  scannerTitle: {
+    ...typography.bodyLarge,
+    fontWeight: '700',
+    color: colors.white,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  scannerSubtitle: {
+    ...typography.caption,
+    color: '#8fd6de',
+    textAlign: 'center',
+    marginTop: 4,
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   viewfinder: {
-    width: 250,
-    height: 250,
+    width: 260,
+    height: 260,
     borderRadius: radii.l,
     position: 'relative',
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: 'transparent',
   },
   corner: {
     position: 'absolute',
-    width: 28,
-    height: 28,
+    width: 32,
+    height: 32,
     borderColor: colors.teal,
   },
   cornerTL: {
@@ -847,31 +888,35 @@ const styles = StyleSheet.create({
     left: 0,
     borderTopWidth: 4,
     borderLeftWidth: 4,
+    borderTopLeftRadius: radii.m,
   },
   cornerTR: {
     top: 0,
     right: 0,
     borderTopWidth: 4,
     borderRightWidth: 4,
+    borderTopRightRadius: radii.m,
   },
   cornerBL: {
     bottom: 0,
     left: 0,
     borderBottomWidth: 4,
     borderLeftWidth: 4,
+    borderBottomLeftRadius: radii.m,
   },
   cornerBR: {
     bottom: 0,
     right: 0,
     borderBottomWidth: 4,
     borderRightWidth: 4,
+    borderBottomRightRadius: radii.m,
   },
   laserLine: {
     height: 3,
     backgroundColor: colors.sun,
     shadowColor: colors.sun,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.9,
     shadowRadius: 8,
   },
   scannerHint: {

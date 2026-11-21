@@ -557,12 +557,18 @@ class ApiService {
     }
   }
 
-  async getCustomerWalletTransactions(page = 1) {
+  async getCustomerWalletTransactions(page = 1, limit = 20) {
     try {
-      const res = await this.request(`/customer/wallet/transactions?page=${page}`);
-      return res.transactions || res.data || [];
+      const res = await this.request(`/customer/wallet/transactions?page=${page}&limit=${limit}`);
+      const txArray = Array.isArray(res?.transactions) ? res.transactions : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      return {
+        transactions: txArray,
+        page: res?.page || page,
+        totalPages: res?.totalPages || 1,
+        totalRecords: res?.totalRecords || res?.count || txArray.length,
+      };
     } catch (e) {
-      return [];
+      return { transactions: [], page: 1, totalPages: 1, totalRecords: 0 };
     }
   }
 
@@ -1024,10 +1030,11 @@ class ApiService {
     }
   }
 
-  async getAdminBoats() {
+  async getAdminBoats(params) {
     try {
-      const res = await this.request('/admin/boats');
-      return res.boats || res.data || [];
+      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+      const res = await this.request(`/admin/boats${qs}`);
+      return res.boats || res.data || (Array.isArray(res) ? res : []);
     } catch (e) {
       return [];
     }

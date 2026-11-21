@@ -25,6 +25,144 @@ import RazorpayCheckoutModal from '../../components/payment/RazorpayCheckoutModa
 
 const QUICK_AMOUNTS = [200, 500, 1000, 2000];
 
+export const formatTransactionDate = (dateVal) => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return String(dateVal);
+  return d.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
+
+export const getTransactionMeta = (tx) => {
+  const type = tx?.type || 'unknown';
+  const amt = Number(tx?.amount ?? 0);
+  const isPositive = amt > 0;
+  const isZero = amt === 0;
+
+  switch (type) {
+    case 'topup':
+    case 'wallet_topup':
+      return {
+        label: tx?.note || 'Wallet Top-up',
+        icon: '💳',
+        chip: 'TOP-UP',
+        variant: 'success',
+        direction: 'credit',
+        sign: '+',
+        isPositive: true,
+        isZero: false,
+      };
+    case 'cashback':
+      return {
+        label: tx?.note || 'Loyalty Cashback Credited',
+        icon: '🎁',
+        chip: 'CASHBACK',
+        variant: 'success',
+        direction: 'credit',
+        sign: '+',
+        isPositive: true,
+        isZero: false,
+      };
+    case 'reward':
+      return {
+        label: tx?.note || 'Bonus Reward Credited',
+        icon: '🌟',
+        chip: 'REWARD',
+        variant: 'success',
+        direction: 'credit',
+        sign: '+',
+        isPositive: true,
+        isZero: false,
+      };
+    case 'refund_credit':
+    case 'refund':
+      return {
+        label: tx?.note || (tx?.booking?.ticketId ? `Refund for Ticket ${tx.booking.ticketId}` : 'Booking Refund Credited to Wallet'),
+        icon: '🔄',
+        chip: 'REFUND',
+        variant: 'success',
+        direction: 'credit',
+        sign: '+',
+        isPositive: true,
+        isZero: false,
+      };
+    case 'booking_payment':
+    case 'booking_debit':
+    case 'booking':
+      return {
+        label: tx?.note || (tx?.booking?.ticketId ? `Ride Booking (${tx.booking.ticketId})` : 'Boat Ride Booking Payment'),
+        icon: '🛶',
+        chip: 'BOOKING',
+        variant: 'secondary',
+        direction: 'debit',
+        sign: '-',
+        isPositive: false,
+        isZero: false,
+      };
+    case 'withdrawal_request':
+      return {
+        label: tx?.note || 'Bank Withdrawal Requested',
+        icon: '🏦',
+        chip: 'WITHDRAWAL',
+        variant: 'warning',
+        direction: 'debit',
+        sign: '-',
+        isPositive: false,
+        isZero: false,
+      };
+    case 'withdrawal_paid':
+      return {
+        label: tx?.note || 'Bank Withdrawal Payout Cleared',
+        icon: '✅',
+        chip: 'CLEARED',
+        variant: 'info',
+        direction: 'neutral',
+        sign: '',
+        isPositive: false,
+        isZero: true,
+      };
+    case 'withdrawal_rejected':
+      return {
+        label: tx?.note ? `Withdrawal Rejected — ${tx.note}` : 'Withdrawal Rejected — Balance Restored',
+        icon: '↩️',
+        chip: 'RESTORED',
+        variant: 'success',
+        direction: 'credit',
+        sign: '+',
+        isPositive: true,
+        isZero: false,
+      };
+    case 'admin_adjustment':
+      return {
+        label: tx?.note || 'Administrative Wallet Adjustment',
+        icon: '⚖️',
+        chip: 'ADJUSTMENT',
+        variant: isPositive ? 'success' : isZero ? 'secondary' : 'warning',
+        direction: isPositive ? 'credit' : isZero ? 'neutral' : 'debit',
+        sign: isPositive ? '+' : isZero ? '' : '-',
+        isPositive,
+        isZero,
+      };
+    default:
+      return {
+        label: tx?.note || tx?.description || (type ? type.replace(/_/g, ' ') : 'Wallet Transaction'),
+        icon: isPositive ? '💳' : '💸',
+        chip: (type ? type.replace(/_/g, ' ') : 'TRANSACTION').toUpperCase(),
+        variant: isPositive ? 'success' : isZero ? 'secondary' : 'warning',
+        direction: isPositive ? 'credit' : isZero ? 'neutral' : 'debit',
+        sign: isPositive ? '+' : isZero ? '' : '-',
+        isPositive,
+        isZero,
+      };
+  }
+};
+
 export default function CustomerWalletScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
@@ -210,7 +348,7 @@ export default function CustomerWalletScreen({ navigation }) {
   const transactions = allTransactions.filter((tx) => {
     if (activeFilter === 'all') return true;
     if (activeFilter === 'topup') return tx.type === 'topup' || tx.type === 'reward' || tx.type === 'wallet_topup';
-    if (activeFilter === 'booking') return tx.type === 'booking_payment' || tx.type === 'booking_debit' || tx.type === 'booking' || tx.amount < 0;
+    if (activeFilter === 'booking') return tx.type === 'booking_payment' || tx.type === 'booking_debit' || tx.type === 'booking';
     if (activeFilter === 'refund') return tx.type === 'refund_credit' || tx.type === 'cashback' || tx.type === 'refund';
     return true;
   });
@@ -369,32 +507,55 @@ export default function CustomerWalletScreen({ navigation }) {
                 <Text style={styles.emptyInlineText}>No transactions found in this category.</Text>
               </View>
             ) : (
-              transactions.map((tx) => {
-                const isPositive = tx.amount > 0;
+              transactions.map((tx, idx) => {
+                const meta = getTransactionMeta(tx);
+                const amt = Number(tx?.amount ?? 0);
+                const displayAmt = Math.abs(amt).toLocaleString('en-IN');
+                const formattedDate = formatTransactionDate(tx.createdAt);
+                const status = (tx.status || 'completed').toLowerCase();
+                const statusVariant =
+                  status === 'completed' || status === 'success'
+                    ? 'success'
+                    : status === 'failed'
+                    ? 'danger'
+                    : 'warning';
+
                 return (
-                  <View key={tx._id} style={styles.txItem}>
+                  <View key={tx._id || String(idx)} style={styles.txItem}>
                     <View style={styles.txIconBox}>
-                      <Text style={styles.txEmoji}>
-                        {tx.type === 'topup' ? '💳' : tx.type === 'cashback' ? '🎁' : tx.type === 'refund_credit' ? '🔄' : '🛶'}
-                      </Text>
+                      <Text style={styles.txEmoji}>{meta.icon}</Text>
                     </View>
 
                     <View style={styles.txContent}>
                       <Text style={[styles.txTitle, isDark && styles.textLight]}>
-                        {tx.note || tx.description || (tx.type === 'booking_payment' ? `Booking ${tx.booking?.ticketId || 'Payment'}` : tx.type)}
+                        {tx.note || meta.label}
                       </Text>
-                      <Text style={styles.txDate}>{new Date(tx.createdAt || Date.now()).toLocaleDateString()}</Text>
+                      {tx.booking?.ticketId ? (
+                        <Text style={styles.txBookingRef}>Ticket: {tx.booking.ticketId}</Text>
+                      ) : null}
+                      <Text style={styles.txDate}>{formattedDate}</Text>
+                      {tx.razorpayPaymentId ? (
+                        <Text style={styles.txRefId}>Ref: {tx.razorpayPaymentId}</Text>
+                      ) : null}
                     </View>
 
                     <View style={styles.txAmountCol}>
-                      <Text style={[styles.txAmount, isPositive ? styles.txPositive : styles.txNegative]}>
-                        {isPositive ? '+' : ''}₹{Math.abs(tx.amount)}
+                      <Text
+                        style={[
+                          styles.txAmount,
+                          meta.isPositive ? styles.txPositive : (meta.isZero ? styles.txNeutral : styles.txNegative),
+                        ]}
+                      >
+                        {meta.sign}₹{displayAmt}
                       </Text>
                       <Badge
-                        label={(tx.status || 'completed').toUpperCase()}
-                        variant={tx.status === 'completed' || tx.status === 'success' || !tx.status ? 'success' : tx.status === 'failed' ? 'danger' : 'warning'}
+                        label={status.toUpperCase()}
+                        variant={statusVariant}
                         size="small"
                       />
+                      {typeof tx.balanceAfter === 'number' ? (
+                        <Text style={styles.txBalanceAfter}>₹{tx.balanceAfter.toLocaleString('en-IN')} balance after</Text>
+                      ) : null}
                     </View>
                   </View>
                 );
@@ -962,7 +1123,28 @@ const styles = StyleSheet.create({
     color: colors.success,
   },
   txNegative: {
-    color: colors.ink,
+    color: colors.danger,
+  },
+  txNeutral: {
+    color: colors.gray600,
+  },
+  txBalanceAfter: {
+    ...typography.caption,
+    color: colors.gray500,
+    marginTop: 2,
+    fontSize: 11,
+  },
+  txBookingRef: {
+    ...typography.caption,
+    color: colors.teal,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  txRefId: {
+    ...typography.caption,
+    color: colors.gray400,
+    fontSize: 10,
+    marginTop: 2,
   },
   sheetLabel: {
     ...typography.bodyMedium,

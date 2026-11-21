@@ -170,7 +170,7 @@ export default function AdminDashboardScreen({ navigation }) {
         <View style={styles.attentionGrid}>
           <TouchableOpacity
             style={styles.attentionCard}
-            onPress={() => navigation.navigate('AdminBoats')}
+            onPress={() => navigation.navigate('AdminBoats', { initialFilter: 'pending' })}
           >
             <View style={styles.rowBetween}>
               <Text style={styles.attentionIcon}>🛶</Text>

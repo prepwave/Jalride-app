@@ -10,13 +10,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jalride.app",
+      "buildNumber": "1",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Allow JalRide to access your camera to scan ghat standee posters and digital boarding tickets.",
         "NSLocationWhenInUseUsageDescription": "Allow JalRide to access your location to discover nearby Varanasi boarding ghats."
       }
     },
     "android": {
       "package": "com.jalride.app",
+      "versionCode": 1,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.ACCESS_FINE_LOCATION",
